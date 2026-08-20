@@ -40,14 +40,39 @@ agent = create_react_agent(
     model=llm,
     tools=[web_search])
 
+
+def agent_node(state):
+    response = agent.invoke(
+        {
+            "messages": [
+                ("human", state["query"])
+            ]
+        }
+    )
+
+    state["answer"] = response["messages"][-1].text
+
+    return state
+#         { للتذكير لفائدة return state
+#     "query": "Who founded OpenAI?",
+#     "answer": "..."
+# }________________________________________________________
+
+
+
+graph=StateGraph(dict)
+
+graph.add_node("agent", agent_node)
+graph.set_entry_point("agent")
+graph.add_edge("agent", END)
+app=graph.compile()
+
 query = input("Query> ")
 
-response = agent.invoke(
+result = app.invoke(
     {
-        "messages": [
-            ("human", query)
-        ]
+        "query": query
     }
 )
 
-print(response["messages"][-1].text)
+print(result["answer"])

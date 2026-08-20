@@ -1,3 +1,5 @@
+import { getSessionId } from './session'
+
 const CHAT_URL = 'http://127.0.0.1:8000/chat'
 
 function readErrorDetail(payload, fallback) {
@@ -63,7 +65,10 @@ export async function sendChatQuery(query) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({
+        session_id: getSessionId(),
+        query,
+      }),
     })
   } catch {
     throw new Error(

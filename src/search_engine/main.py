@@ -60,7 +60,7 @@ def agent_node(state): #Adapter
         }
     )
 
-    state["answer"] = response["messages"][-1].text
+    state["answer"] = response["messages"][-1].content
     chat_history.append(
     ("assistant", state["answer"])
 )
@@ -81,25 +81,27 @@ graph.add_edge("agent", END)
 app=graph.compile()
 
  # the queston or the prompt ( the request)
-while True:
-    query = input("Query> ").strip()
+if __name__ == "__main__": 
+    
+    while True:
+        query = input("Query> ").strip()
 
-    if query.lower() in ["exit", "quit"]:
-        break
+        if query.lower() in ["exit", "quit"]:
+            break
 
-    if not query:
-        print("Please enter a question.")
-        continue
+        if not query:
+            print("Please enter a question.")
+            continue
 
-    try:
-        result = app.invoke(
-            {
-                "query": query
-            }
-        )
+        try:
+            result = app.invoke(
+                {
+                    "query": query
+                }
+            )
 
-        print("\nAnswer:")
-        print(result["answer"])
+            print("\nAnswer:")
+            print(result["answer"])
 
-    except Exception as e:
-        print(f"\nSomething went wrong: {e}")
+        except Exception as e:
+            print(f"\nSomething went wrong: {e}")

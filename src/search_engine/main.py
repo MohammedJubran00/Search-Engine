@@ -49,8 +49,33 @@ Provide clear answers and include sources whenever possible.
 Do not make up information.
 """)
 
-chat_history = []
-def agent_node(state): #Adapter 
+# chat_history = []
+sessions = {}
+
+# def agent_node(state): #Adapter  #for chat history and no session id
+#     chat_history.append(
+#         ("human", state["query"])
+#     )
+#     response = agent.invoke(
+#         {
+#             "messages": chat_history
+#         }
+#     )
+
+#     state["answer"] = response["messages"][-1].content
+#     chat_history.append(
+#     ("assistant", state["answer"])
+# )
+
+#     return state
+# #         { للتذكير لفائدة return state
+# #     "query": "Who founded OpenAI?",
+# #     "answer": "..."
+# # }________________________________________________________
+
+def agent_node(state): #for chat history and session id
+    chat_history=sessions.get(state["session_id"], []) #get the chat history for the session id للتذكير 
+    # [] اذا ما بقت السيشن موجودة 
     chat_history.append(
         ("human", state["query"])
     )
@@ -59,18 +84,15 @@ def agent_node(state): #Adapter
             "messages": chat_history
         }
     )
-
-    state["answer"] = response["messages"][-1].content
-    chat_history.append(
-    ("assistant", state["answer"])
-)
-
+    answer=response["messages"][-1].content #[-1] اخر مسج انبعت من اليوزر 
+    chat_history.append(("assistant", answer))
+    sessions[state["session_id"]] = chat_history
+    state["answer"] = answer
     return state
-#         { للتذكير لفائدة return state
-#     "query": "Who founded OpenAI?",
-#     "answer": "..."
-# }________________________________________________________
-
+    #         { للتذكير لفائدة return state
+    #     "query": "Who founded OpenAI?",
+    #     "answer": "..."
+    # }________________________________________________________
 
 
 graph=StateGraph(dict)
@@ -96,6 +118,7 @@ if __name__ == "__main__":
         try:
             result = app.invoke(
                 {
+                    "session_id": "user1",
                     "query": query
                 }
             )

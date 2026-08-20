@@ -25,6 +25,10 @@ from pydantic import BaseModel
 from src.search_engine.main import app as graph_app # عشان ما نخلطه مع: app = FastAPI() ( لا نستخدم نفس الاسم)
 app = FastAPI()
 
+# CORS settings:
+# Allow requests from any origin, using any HTTP method,
+# and accepting any request headers.
+# This allows the frontend to make requests to the API from any origin.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,6 +37,7 @@ app.add_middleware(
 )
 
 class ChatRequest(BaseModel):
+    session_id: str
     query: str
 
 
@@ -77,6 +82,7 @@ def root():
 def chat(request:ChatRequest):
     result= graph_app.invoke(
         {
+            "session_id": request.session_id,
             "query":request.query
         })
     return {

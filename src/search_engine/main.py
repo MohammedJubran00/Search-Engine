@@ -18,7 +18,7 @@ tavily = TavilySearch(max_results=5)
 
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
+    model="gemini-3.5-flash-lite",
     temperature=0
 )
 
@@ -38,19 +38,32 @@ def web_search(query:str):
 
 agent = create_react_agent(
     model=llm,
-    tools=[web_search])
+    tools=[web_search],
+    prompt="""
+You are an AI research assistant.
 
+Always use web_search when the question requires factual or recent information.
 
-def agent_node(state):
+Provide clear answers and include sources whenever possible.
+
+Do not make up information.
+""")
+
+chat_history = []
+def agent_node(state): #Adapter 
+    chat_history.append(
+        ("human", state["query"])
+    )
     response = agent.invoke(
         {
-            "messages": [
-                ("human", state["query"])
-            ]
+            "messages": chat_history
         }
     )
 
     state["answer"] = response["messages"][-1].text
+    chat_history.append(
+    ("assistant", state["answer"])
+)
 
     return state
 #         { للتذكير لفائدة return state
@@ -67,12 +80,26 @@ graph.set_entry_point("agent")
 graph.add_edge("agent", END)
 app=graph.compile()
 
-query = input("Query> ")
+ # the queston or the prompt ( the request)
+while True:
+    query = input("Query> ").strip()
 
-result = app.invoke(
-    {
-        "query": query
-    }
-)
+    if query.lower() in ["exit", "quit"]:
+        break
 
-print(result["answer"])
+    if not query:
+        print("Please enter a question.")
+        continue
+
+    try:
+        result = app.invoke(
+            {
+                "query": query
+            }
+        )
+
+        print("\nAnswer:")
+        print(result["answer"])
+
+    except Exception as e:
+        print(f"\nSomething went wrong: {e}")

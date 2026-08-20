@@ -36,4 +36,16 @@ def web_search(query:str):
     return "\n\n".join(results)
 
 
-print(web_search.invoke("Latest AI news"))
+agent = create_react_agent(
+    model=llm,
+    tools=[web_search])
+
+response=agent.invoke(
+        {
+            "messages":[
+            ("human", "What are the latest developments in AI?")
+        ]
+        }
+    )
+
+print(response["messages"][-1].text)

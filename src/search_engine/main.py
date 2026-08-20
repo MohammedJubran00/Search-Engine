@@ -40,12 +40,14 @@ agent = create_react_agent(
     model=llm,
     tools=[web_search])
 
-response=agent.invoke(
-        {
-            "messages":[
-            ("human", "What are the latest developments in AI?")
+query = input("Query> ")
+
+response = agent.invoke(
+    {
+        "messages": [
+            ("human", query)
         ]
-        }
-    )
+    }
+)
 
 print(response["messages"][-1].text)

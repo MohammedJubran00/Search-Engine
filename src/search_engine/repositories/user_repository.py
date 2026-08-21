@@ -7,6 +7,8 @@ Responsibility: load and insert `User` rows. No password hashing, no HTTP.
 Communicates with: `models.user` and `services.auth_service`.
 """
 
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +26,11 @@ class UserRepository:
         result = await self._session.execute(
             select(User).where(User.email == email)
         )
+        return result.scalar_one_or_none()
+
+    async def get_by_id(self, user_id: uuid.UUID) -> User | None:
+        """Return the user with this id, or None."""
+        result = await self._session.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
     async def create(

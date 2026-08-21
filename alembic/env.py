@@ -5,8 +5,8 @@ Why it exists: schema changes go through Alembic, not `create_all()`.
 Responsibility: load `Base.metadata` and run migrations against PostgreSQL
 using the sync URL from application settings.
 
-Communicates with: `core.config`, `database.database.Base`, and `models.user`
-(imported so the `users` table is on metadata).
+Communicates with: `core.config`, `database.database.Base`, and `models`
+(imported so every table is on metadata).
 """
 
 from logging.config import fileConfig
@@ -16,6 +16,8 @@ from sqlalchemy import create_engine, pool
 from alembic import context
 from src.search_engine.core.config import settings
 from src.search_engine.database.database import Base
+from src.search_engine.models.conversation import Conversation  # noqa: F401
+from src.search_engine.models.message import Message  # noqa: F401
 from src.search_engine.models.user import User  # noqa: F401
 
 config = context.config

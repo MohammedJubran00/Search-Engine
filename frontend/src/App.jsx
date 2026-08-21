@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { streamChatQuery } from './api/chat'
-import { loadMessages, saveMessages } from './api/messages'
+import { fetchLatestConversation, streamChatQuery } from './api/chat'
 import ChatWindow from './components/ChatWindow'
 import Header from './components/Header'
 import SearchInput from './components/SearchInput'
@@ -20,29 +19,54 @@ function createMessage(partial) {
   }
 }
 
-function restoreMessageSeq(messages) {
-  let maxId = 0
-  for (const message of messages) {
-    const match = /^msg-(\d+)$/.exec(message.id)
-    if (match) {
-      maxId = Math.max(maxId, Number(match[1]))
-    }
-  }
-  messageSeq = maxId
+function messagesFromServer(records) {
+  return records
+    .filter(
+      (item) =>
+        item &&
+        (item.role === 'user' || item.role === 'assistant') &&
+        typeof item.content === 'string',
+    )
+    .map((item) => ({
+      id: String(item.id),
+      role: item.role,
+      content: item.content,
+    }))
 }
 
 export default function App() {
-  const [messages, setMessages] = useState(() => {
-    const restored = loadMessages()
-    restoreMessageSeq(restored)
-    return restored
-  })
+  const [messages, setMessages] = useState([])
+  const [conversationId, setConversationId] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const isLoadingRef = useRef(false)
+  const conversationIdRef = useRef(null)
 
   useEffect(() => {
-    saveMessages(messages)
-  }, [messages])
+    conversationIdRef.current = conversationId
+  }, [conversationId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetchLatestConversation()
+      .then((latest) => {
+        if (cancelled) return
+        if (latest.conversationId) {
+          conversationIdRef.current = latest.conversationId
+          setConversationId(latest.conversationId)
+        }
+        if (latest.messages.length) {
+          setMessages(messagesFromServer(latest.messages))
+        }
+      })
+      .catch(() => {
+        // 401 already redirects. Other errors leave an empty chat.
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleSubmit = useCallback(async (query) => {
     const trimmed = query.trim()
@@ -77,6 +101,12 @@ export default function App() {
     try {
       await streamChatQuery(trimmed, (fullText) => {
         upsertAssistant({ content: fullText, isError: false })
+      }, {
+        conversationId: conversationIdRef.current,
+        onConversationId: (id) => {
+          conversationIdRef.current = id
+          setConversationId(id)
+        },
       })
     } catch (error) {
       upsertAssistant({

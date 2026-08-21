@@ -18,18 +18,27 @@
 
 
 
+import asyncio
 import json
 import logging
+import uuid
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.search_engine.auth_router import router as auth_router
-from src.search_engine.main import app as graph_app # عشان ما نخلطه مع: app = FastAPI() ( لا نستخدم نفس الاسم)
+from src.search_engine.conversation_router import router as conversation_router
+from src.search_engine.database.database import get_db
+from src.search_engine.deps import get_current_user
+from src.search_engine.main import app as graph_app  # عشان ما نخلطه مع: app = FastAPI() ( لا نستخدم نفس الاسم)
 from src.search_engine.main import stream_agent
+from src.search_engine.models.user import User
+from src.search_engine.schemas.chat import ChatRequest, ChatResponse
+from src.search_engine.services.chat_service import ChatService, ConversationNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +56,11 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
-
-class ChatRequest(BaseModel):
-    session_id: str
-    query: str
+app.include_router(
+    conversation_router,
+    prefix="/api/conversations",
+    tags=["conversations"],
+)
 
 
 def error_response(status_code: int, message: str) -> JSONResponse:
@@ -74,14 +84,16 @@ async def handle_invalid_request(request: Request, exc: RequestValidationError):
         else:
             messages.append(f"{field}: {err.get('msg', 'is invalid')}")
 
-    error_text = " ".join(messages) if messages else "Invalid request. Check session_id and query."
+    error_text = " ".join(messages) if messages else "Invalid request. Check query."
     return error_response(400, error_text)
 
 
 @app.exception_handler(Exception)
 async def handle_unexpected_error(request: Request, exc: Exception):
-    # Last-resort net: any uncaught exception should become a 500 JSON
-    # response instead of taking the Uvicorn worker down.
+    # Do not convert HTTPException (401/404) into a generic 500.
+    if isinstance(exc, StarletteHTTPException):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
     logger.error("Unhandled server error on %s %s", request.method, request.url.path, exc_info=exc)
     return error_response(
         500,
@@ -121,34 +133,65 @@ def to_answer_text(content) -> str:
     return str(content)
 
 
+_STREAM_END = object()
+
+
+def graph_thread_id(conversation_id: uuid.UUID) -> str:
+    """LangGraph in-memory key. Not an identity claim — ownership was already checked."""
+    return str(conversation_id)
+
+
+async def persist_user_turn(
+    db: AsyncSession,
+    user: User,
+    conversation_id: uuid.UUID | None,
+    query: str,
+):
+    """Create/load the owned conversation and store the user message."""
+    return await ChatService(db).start_user_turn(
+        user_id=user.id,
+        conversation_id=conversation_id,
+        query=query,
+    )
+
+
 @app.get("/")
 def root():
     return {"message": "AI Search Engine API is running"}
 
 
 @app.post("/chat")
-def chat(request:ChatRequest):
-    session_id = (request.session_id or "").strip()
+async def chat(
+    request: ChatRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     query = (request.query or "").strip()
-
-    # Reject empty input here so we never start LangGraph / Gemini / Tavily
-    # for a question that cannot succeed.
-    if not session_id:
-        return error_response(400, "session_id is required.")
     if not query:
         return error_response(400, "Please enter a question.")
 
     try:
-        # Isolate LangGraph execution so Gemini, Tavily, or graph failures
-        # become an HTTP 500 instead of a FastAPI crash.
-        result = graph_app.invoke(
+        conversation = await persist_user_turn(
+            db,
+            user,
+            request.conversation_id,
+            query,
+        )
+    except ConversationNotFoundError:
+        return error_response(404, "Conversation not found.")
+
+    thread_id = graph_thread_id(conversation.id)
+
+    try:
+        result = await asyncio.to_thread(
+            graph_app.invoke,
             {
-                "session_id": session_id,
+                "session_id": thread_id,
                 "query": query,
-            }
+            },
         )
     except Exception:
-        logger.exception("LangGraph invoke failed for session_id=%s", session_id)
+        logger.exception("LangGraph invoke failed for conversation_id=%s", conversation.id)
         return error_response(
             500,
             "Something went wrong while generating an answer. Please try again.",
@@ -157,7 +200,6 @@ def chat(request:ChatRequest):
     try:
         answer = to_answer_text(result.get("answer") if isinstance(result, dict) else None)
     except Exception:
-        # Conversion is separate so a malformed model payload cannot crash /chat.
         logger.exception("Failed to convert LangGraph answer to text")
         return error_response(
             500,
@@ -165,15 +207,22 @@ def chat(request:ChatRequest):
         )
 
     if not answer:
-        logger.error("LangGraph returned an empty answer for session_id=%s", session_id)
+        logger.error("LangGraph returned an empty answer for conversation_id=%s", conversation.id)
         return error_response(
             500,
             "The search engine returned an empty answer. Please try again.",
         )
 
-    return {
-        "answer": answer
-    }
+    try:
+        await ChatService(db).add_assistant_message(
+            user_id=user.id,
+            conversation_id=conversation.id,
+            content=answer,
+        )
+    except ConversationNotFoundError:
+        return error_response(404, "Conversation not found.")
+
+    return ChatResponse(answer=answer, conversation_id=conversation.id)
 
 
 def sse_event(payload: dict) -> str:
@@ -182,28 +231,47 @@ def sse_event(payload: dict) -> str:
 
 
 @app.post("/chat/stream")
-def chat_stream(request: ChatRequest):
-    session_id = (request.session_id or "").strip()
+async def chat_stream(
+    request: ChatRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     query = (request.query or "").strip()
-
-    # Same input rules as /chat so streaming cannot start on an empty prompt.
-    if not session_id:
-        return error_response(400, "session_id is required.")
     if not query:
         return error_response(400, "Please enter a question.")
 
-    def generate():
-        # Generator keeps the HTTP connection open and flushes each token
-        # so the React client can render the answer as it is produced.
+    try:
+        conversation = await persist_user_turn(
+            db,
+            user,
+            request.conversation_id,
+            query,
+        )
+    except ConversationNotFoundError:
+        return error_response(404, "Conversation not found.")
+
+    conversation_id = conversation.id
+    user_id = user.id
+    thread_id = graph_thread_id(conversation_id)
+
+    async def generate():
         try:
+            yield sse_event({"conversation_id": str(conversation_id)})
+            iterator = stream_agent(thread_id, query)
             yielded = False
-            for delta in stream_agent(session_id, query):
+            answer = ""
+
+            while True:
+                delta = await asyncio.to_thread(next, iterator, _STREAM_END)
+                if delta is _STREAM_END:
+                    break
                 if not delta:
                     continue
                 yielded = True
+                answer += delta
                 yield sse_event({"delta": delta})
 
-            if not yielded:
+            if not yielded or not answer.strip():
                 yield sse_event(
                     {
                         "error": "The search engine returned an empty answer. Please try again."
@@ -211,9 +279,19 @@ def chat_stream(request: ChatRequest):
                 )
                 return
 
-            yield sse_event({"done": True})
+            try:
+                await ChatService(db).add_assistant_message(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    content=answer,
+                )
+            except ConversationNotFoundError:
+                yield sse_event({"error": "Conversation not found."})
+                return
+
+            yield sse_event({"done": True, "conversation_id": str(conversation_id)})
         except Exception:
-            logger.exception("Streaming chat failed for session_id=%s", session_id)
+            logger.exception("Streaming chat failed for conversation_id=%s", conversation_id)
             yield sse_event(
                 {
                     "error": "Something went wrong while generating an answer. Please try again."
@@ -229,5 +307,6 @@ def chat_stream(request: ChatRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
 
     

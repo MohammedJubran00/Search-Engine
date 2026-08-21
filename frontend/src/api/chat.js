@@ -1,7 +1,8 @@
-import { getSessionId } from './session'
+import { authHeaders, redirectIfUnauthorized } from './auth'
 
-const CHAT_URL = 'http://127.0.0.1:8000/chat'
-const CHAT_STREAM_URL = 'http://127.0.0.1:8000/chat/stream'
+const CHAT_URL = '/chat'
+const CHAT_STREAM_URL = '/chat/stream'
+const LATEST_CONVERSATION_URL = '/api/conversations/latest'
 
 function readErrorDetail(payload, fallback) {
   if (!payload || typeof payload !== 'object') return fallback
@@ -61,24 +62,73 @@ function extractAnswer(payload) {
   return extractText(raw).trim()
 }
 
-export async function sendChatQuery(query) {
-  let response
+function jsonHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    ...authHeaders(),
+  }
+}
 
+function chatBody(query, conversationId) {
+  const body = { query }
+  if (conversationId) {
+    body.conversation_id = conversationId
+  }
+  return JSON.stringify(body)
+}
+
+export async function fetchLatestConversation() {
+  let response
   try {
-    response = await fetch(CHAT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        session_id: getSessionId(),
-        query,
-      }),
+    response = await fetch(LATEST_CONVERSATION_URL, {
+      headers: authHeaders(),
     })
   } catch {
     throw new Error(
       'Could not reach the search engine. Make sure the FastAPI server is running at http://127.0.0.1:8000.',
     )
+  }
+
+  if (redirectIfUnauthorized(response.status)) {
+    throw new Error('Not authenticated.')
+  }
+
+  let payload = null
+  try {
+    payload = await response.json()
+  } catch {
+    payload = null
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      readErrorDetail(payload, 'Could not load your conversation. Please try again.'),
+    )
+  }
+
+  return {
+    conversationId: payload?.conversation_id || null,
+    messages: Array.isArray(payload?.messages) ? payload.messages : [],
+  }
+}
+
+export async function sendChatQuery(query, conversationId) {
+  let response
+
+  try {
+    response = await fetch(CHAT_URL, {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: chatBody(query, conversationId),
+    })
+  } catch {
+    throw new Error(
+      'Could not reach the search engine. Make sure the FastAPI server is running at http://127.0.0.1:8000.',
+    )
+  }
+
+  if (redirectIfUnauthorized(response.status)) {
+    throw new Error('Not authenticated.')
   }
 
   let payload = null
@@ -115,7 +165,10 @@ export async function sendChatQuery(query) {
     )
   }
 
-  return answer
+  return {
+    answer,
+    conversationId: payload?.conversation_id || conversationId || null,
+  }
 }
 
 function parseSseBlock(block) {
@@ -129,25 +182,27 @@ function parseSseBlock(block) {
   return JSON.parse(data)
 }
 
-export async function streamChatQuery(query, onDelta) {
+export async function streamChatQuery(query, onDelta, options = {}) {
+  const { conversationId, onConversationId } = options
   let response
 
   try {
     response = await fetch(CHAT_STREAM_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        ...jsonHeaders(),
         Accept: 'text/event-stream',
       },
-      body: JSON.stringify({
-        session_id: getSessionId(),
-        query,
-      }),
+      body: chatBody(query, conversationId),
     })
   } catch {
     throw new Error(
       'Could not reach the search engine. Make sure the FastAPI server is running at http://127.0.0.1:8000.',
     )
+  }
+
+  if (redirectIfUnauthorized(response.status)) {
+    throw new Error('Not authenticated.')
   }
 
   if (!response.ok) {
@@ -174,6 +229,7 @@ export async function streamChatQuery(query, onDelta) {
   const decoder = new TextDecoder()
   let buffer = ''
   let answer = ''
+  let resolvedConversationId = conversationId || null
 
   while (true) {
     const { value, done } = await reader.read()
@@ -193,6 +249,11 @@ export async function streamChatQuery(query, onDelta) {
 
       if (!payload) continue
 
+      if (typeof payload.conversation_id === 'string' && payload.conversation_id) {
+        resolvedConversationId = payload.conversation_id
+        onConversationId?.(payload.conversation_id)
+      }
+
       if (typeof payload.error === 'string' && payload.error.trim()) {
         throw new Error(payload.error.trim())
       }
@@ -210,5 +271,5 @@ export async function streamChatQuery(query, onDelta) {
     )
   }
 
-  return answer
+  return { answer, conversationId: resolvedConversationId }
 }

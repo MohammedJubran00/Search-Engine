@@ -1,27 +1,31 @@
 """User ORM model mapped to the `users` table.
 
-Why it exists: authentication needs a persisted user row. Chat history is
-still in-memory in `main.py` and is not stored here.
+Why it exists: authentication needs a persisted user row. Chat history in
+LangGraph (`main.py`) is still in-memory; persisted threads live on
+`conversations` / `messages`.
 
 Responsibility: define columns only. No password hashing, no HTTP, no queries.
 
-Communicates with: `database.database.Base`. Repositories in a later task
-will query this model. `id` is the intended foreign key for a future
-`conversations.user_id` column (not created in this task).
+Communicates with: `database.database.Base` and `models.conversation`
+(`conversations.user_id`).
 """
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.search_engine.database.database import Base
 
+if TYPE_CHECKING:
+    from src.search_engine.models.conversation import Conversation
+
 
 class User(Base):
-    """Registered account. One user will later own many conversations."""
+    """Registered account. One user owns many conversations."""
 
     __tablename__ = "users"
 
@@ -54,4 +58,8 @@ class User(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+    conversations: Mapped[list["Conversation"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
     )

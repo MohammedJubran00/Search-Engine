@@ -7,7 +7,7 @@ Responsibility: map HTTP to `AuthService`. Signup and login only.
 Refresh, logout, and `/me` are later tasks.
 
 Communicates with: `schemas.auth`, `services.auth_service`, and
-`database.get_db`. Chat routes stay in `api.py` and stay public.
+`database.get_db`. Chat identity is `deps.get_current_user` in `api.py`.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status

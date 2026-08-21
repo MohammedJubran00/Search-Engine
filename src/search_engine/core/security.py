@@ -1,13 +1,13 @@
 """Password hashing, password-strength rules, and JWT helpers.
 
 Why it exists: signup stores bcrypt hashes; login issues JWT access and
-refresh tokens. Strength rules and token creation must live in one place.
+refresh tokens. Strength rules and token create/decode must live in one place.
 
-Responsibility: validate/hash/verify passwords and encode JWTs. No HTTP,
-no database.
+Responsibility: validate/hash/verify passwords and encode/decode JWTs.
+No HTTP, no database.
 
 Communicates with: `schemas.auth` (password rules), `services.auth_service`
-(hashing and token creation), and `core.config` (JWT secret and expiries).
+(hashing and token creation), `deps` (access-token decode), and `core.config`.
 """
 
 import re
@@ -89,3 +89,31 @@ def create_refresh_token(user_id: uuid.UUID) -> str:
         token_type="refresh",
         expires_delta=timedelta(days=settings.refresh_token_expire_days),
     )
+
+
+class InvalidAccessTokenError(Exception):
+    """Raised when an access token is missing, expired, or not an access JWT."""
+
+
+def decode_access_token(token: str) -> uuid.UUID:
+    """Return `users.id` from a valid access token. Does not load the user row."""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+    except jwt.InvalidTokenError as exc:
+        raise InvalidAccessTokenError from exc
+
+    if payload.get("type") != "access":
+        raise InvalidAccessTokenError
+
+    sub = payload.get("sub")
+    if not isinstance(sub, str) or not sub.strip():
+        raise InvalidAccessTokenError
+
+    try:
+        return uuid.UUID(sub)
+    except ValueError as exc:
+        raise InvalidAccessTokenError from exc

@@ -1,4 +1,5 @@
-"""Authentication business rules.
+"""Authentication and chat-persistence business rules.
 
-Signup and login belong here — not in routers.
+Signup/login belong in `auth_service`. Conversation ownership belongs in
+`chat_service`. Neither belongs in routers.
 """

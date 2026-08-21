@@ -1,4 +1,4 @@
-"""Database access for the `users` table.
+"""Database access layer.
 
-Queries go through `UserRepository` in `user_repository.py`.
+Queries go through repository classes in this package, not FastAPI routes.
 """

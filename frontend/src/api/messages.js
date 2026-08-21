@@ -1,3 +1,4 @@
+import { getUserIdFromAccessToken } from './auth'
 import { getSessionId } from './session'
 
 const MESSAGES_STORAGE_KEY = 'ai-search-engine-messages'
@@ -12,16 +13,23 @@ function isValidMessage(message) {
   )
 }
 
+function messagesStorageKey(userId) {
+  return `${MESSAGES_STORAGE_KEY}:${userId}`
+}
+
 export function loadMessages() {
+  const userId = getUserIdFromAccessToken()
   const sessionId = getSessionId()
+  if (!userId || !sessionId) return []
 
   try {
-    const raw = localStorage.getItem(MESSAGES_STORAGE_KEY)
+    const raw = localStorage.getItem(messagesStorageKey(userId))
     if (!raw) return []
 
     const parsed = JSON.parse(raw)
     if (
       !parsed ||
+      parsed.user_id !== userId ||
       parsed.session_id !== sessionId ||
       !Array.isArray(parsed.messages)
     ) {
@@ -35,12 +43,15 @@ export function loadMessages() {
 }
 
 export function saveMessages(messages) {
+  const userId = getUserIdFromAccessToken()
   const sessionId = getSessionId()
+  if (!userId || !sessionId) return
 
   try {
     localStorage.setItem(
-      MESSAGES_STORAGE_KEY,
+      messagesStorageKey(userId),
       JSON.stringify({
+        user_id: userId,
         session_id: sessionId,
         messages,
       }),

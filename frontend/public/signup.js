@@ -166,14 +166,7 @@ form.addEventListener('submit', async (event) => {
   setLoading(false)
 
   if (response.status === 201) {
-    form.reset()
-    passwordInput.type = 'password'
-    togglePassword.textContent = 'Show'
-    togglePassword.setAttribute('aria-pressed', 'false')
-    formSuccess.innerHTML =
-      'Account created for <strong></strong>. You can return to <a href="/">search</a>.'
-    formSuccess.querySelector('strong').textContent = payload.email || values.email
-    formSuccess.hidden = false
+    window.location.replace('/login.html?signup=success')
     return
   }
 

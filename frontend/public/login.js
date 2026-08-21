@@ -1,6 +1,7 @@
 const LOGIN_URL = '/api/auth/login'
 const ACCESS_TOKEN_KEY = 'ai-search-engine-access-token'
 const REFRESH_TOKEN_KEY = 'ai-search-engine-refresh-token'
+const CHAT_PATH = '/app.html'
 
 const form = document.getElementById('login-form')
 const submitBtn = document.getElementById('submit-btn')
@@ -85,6 +86,11 @@ function setLoading(isLoading) {
   submitLabel.textContent = isLoading ? 'Logging in…' : 'Log in'
 }
 
+const signupParams = new URLSearchParams(window.location.search)
+if (signupParams.get('signup') === 'success') {
+  setTextBanner(formSuccess, 'Account created successfully. Please log in.')
+}
+
 togglePassword.addEventListener('click', () => {
   const show = passwordInput.type === 'password'
   passwordInput.type = show ? 'text' : 'password'
@@ -144,14 +150,7 @@ form.addEventListener('submit', async (event) => {
   if (response.status === 200 && payload?.access_token && payload?.refresh_token) {
     localStorage.setItem(ACCESS_TOKEN_KEY, payload.access_token)
     localStorage.setItem(REFRESH_TOKEN_KEY, payload.refresh_token)
-    const success = document.createElement('span')
-    success.append('You are logged in. Return to ')
-    const link = document.createElement('a')
-    link.href = '/'
-    link.textContent = 'search'
-    success.append(link)
-    success.append('.')
-    setBanner(formSuccess, success)
+    window.location.replace(CHAT_PATH)
     return
   }
 

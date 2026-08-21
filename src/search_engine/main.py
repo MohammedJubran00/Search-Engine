@@ -1,3 +1,4 @@
+import logging
 import os
 
 
@@ -12,6 +13,8 @@ from langgraph.graph import  StateGraph, END
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 tavily = TavilySearch(max_results=5)
@@ -24,16 +27,27 @@ llm = ChatGoogleGenerativeAI(
 
 @tool(description="Search the web using Tavily")
 def web_search(query:str):
-    result=tavily.invoke(query)
-    results=[]
+    # Tavily / network failures must not crash LangGraph. Return a string
+    # the agent can read so it can still produce a response.
+    try:
+        result=tavily.invoke(query)
+        results=[]
 
-    for item in result['results']:
-          results.append(
-            f"Title: {item['title']}\n"
-            f"URL: {item['url']}\n"
-            f"Content: {item['content']}"
+        for item in result['results']:
+              results.append(
+                f"Title: {item['title']}\n"
+                f"URL: {item['url']}\n"
+                f"Content: {item['content']}"
+            )
+        if not results:
+            return "No search results were found for this query."
+        return "\n\n".join(results)
+    except Exception as e:
+        logger.exception("Tavily web_search failed for query=%r", query)
+        return (
+            "Web search is currently unavailable. "
+            f"Tell the user you could not search the web. Details: {e}"
         )
-    return "\n\n".join(results)
 
 
 agent = create_react_agent(
@@ -74,21 +88,38 @@ sessions = {}
 # # }________________________________________________________
 
 def agent_node(state): #for chat history and session id
-    chat_history=sessions.get(state["session_id"], []) #get the chat history for the session id للتذكير 
+    # Copy history first so a failed Gemini/LangGraph call cannot leave a
+    # half-written turn in sessions[session_id].
+    session_id = state.get("session_id")
+    query = state.get("query")
+    chat_history = list(sessions.get(session_id, [])) #get the chat history for the session id للتذكير 
     # [] اذا ما بقت السيشن موجودة 
-    chat_history.append(
-        ("human", state["query"])
-    )
-    response = agent.invoke(
-        {
-            "messages": chat_history
-        }
-    )
-    answer=response["messages"][-1].content #[-1] اخر مسج انبعت من اليوزر 
-    chat_history.append(("assistant", answer))
-    sessions[state["session_id"]] = chat_history
-    state["answer"] = answer
-    return state
+
+    try:
+        chat_history.append(
+            ("human", query)
+        )
+        # Protect the model call: Gemini errors, tool crashes, or an empty
+        # agent payload should be logged and re-raised for the API layer.
+        response = agent.invoke(
+            {
+                "messages": chat_history
+            }
+        )
+        if not response or not response.get("messages"):
+            raise RuntimeError("The agent returned no messages.")
+
+        answer=response["messages"][-1].content #[-1] اخر مسج انبعت من اليوزر 
+        chat_history.append(("assistant", answer))
+        sessions[session_id] = chat_history
+        state["answer"] = answer
+        return state
+    except Exception:
+        logger.exception(
+            "LangGraph agent_node failed for session_id=%r",
+            session_id,
+        )
+        raise
     #         { للتذكير لفائدة return state
     #     "query": "Who founded OpenAI?",
     #     "answer": "..."
@@ -116,6 +147,8 @@ if __name__ == "__main__":
             continue
 
         try:
+            # Same protection as the FastAPI path so a CLI crash does not
+            # kill the process on a Gemini/Tavily error.
             result = app.invoke(
                 {
                     "session_id": "user1",
@@ -127,4 +160,5 @@ if __name__ == "__main__":
             print(result["answer"])
 
         except Exception as e:
+            logger.exception("CLI LangGraph invoke failed")
             print(f"\nSomething went wrong: {e}")

@@ -8,9 +8,63 @@
 }
 
 .header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   width: min(var(--content-width), calc(100% - 32px));
   margin: 0 auto;
   padding: 16px 0;
+}
+
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.header__identity {
+  text-align: right;
+}
+
+.header__user-name {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.header__user-email {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.header__logout {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.header__logout:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: rgba(94, 234, 212, 0.22);
+  background: var(--accent-dim);
+}
+
+.header__logout:disabled {
+  opacity: 0.65;
+  cursor: default;
 }
 
 .header__brand {
@@ -64,5 +118,15 @@
 
   .header__subtitle {
     font-size: 0.8rem;
+  }
+
+  .header__user-email {
+    display: none;
+  }
+
+  .header__logout {
+    padding: 7px 10px;
+    font-size: 0.8rem;
+    border-radius: 10px;
   }
 }

@@ -1,6 +1,33 @@
+import { useEffect, useState } from 'react'
+import { fetchCurrentUser, logout } from '../api/auth'
 import './Header.css'
 
 export default function Header() {
+  const [user, setUser] = useState(null)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    fetchCurrentUser()
+      .then((profile) => {
+        if (!cancelled) setUser(profile)
+      })
+      .catch(() => {
+        // 401 already redirects. Keep Log out available without a name.
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleLogout() {
+    if (isLoggingOut) return
+    setIsLoggingOut(true)
+    await logout()
+  }
+
   return (
     <header className="header">
       <div className="header__inner">
@@ -22,6 +49,23 @@ export default function Header() {
               Searches the web and uses AI to answer your questions.
             </p>
           </div>
+        </div>
+
+        <div className="header__actions">
+          {user ? (
+            <div className="header__identity">
+              <p className="header__user-name">{user.full_name}</p>
+              <p className="header__user-email">{user.email}</p>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="header__logout"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+          >
+            {isLoggingOut ? 'Logging out…' : 'Log out'}
+          </button>
         </div>
       </div>
     </header>

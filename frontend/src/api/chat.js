@@ -1,7 +1,9 @@
-import { getSessionId } from './session'
+import { authorizedFetch } from './auth'
 
-const CHAT_URL = 'http://127.0.0.1:8000/chat'
-const CHAT_STREAM_URL = 'http://127.0.0.1:8000/chat/stream'
+const CHAT_STREAM_URL = '/chat/stream'
+const LATEST_CONVERSATION_URL = '/api/conversations/latest'
+const UNREACHABLE =
+  'Could not reach the search engine. Make sure the FastAPI server is running at http://127.0.0.1:8000.'
 
 function readErrorDetail(payload, fallback) {
   if (!payload || typeof payload !== 'object') return fallback
@@ -24,61 +26,26 @@ function readErrorDetail(payload, fallback) {
   return fallback
 }
 
-function extractText(value) {
-  if (value == null) return ''
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => extractText(item))
-      .filter(Boolean)
-      .join('\n\n')
+function jsonHeaders() {
+  return {
+    'Content-Type': 'application/json',
   }
-
-  if (typeof value !== 'object') return ''
-
-  if (value.type === 'thinking' || value.type === 'reasoning') {
-    return ''
-  }
-
-  if (typeof value.text === 'string') return value.text
-  if (typeof value.answer === 'string') return value.answer
-  if (typeof value.content === 'string') return value.content
-  if (value.content != null) return extractText(value.content)
-  if (value.parts != null) return extractText(value.parts)
-
-  return ''
 }
 
-function extractAnswer(payload) {
-  if (payload == null) return ''
-  if (typeof payload === 'string') return payload.trim()
-
-  const raw =
-    payload.answer ?? payload.response ?? payload.output ?? payload.content ?? payload
-
-  return extractText(raw).trim()
+function chatBody(query, conversationId) {
+  const body = { query }
+  if (conversationId) {
+    body.conversation_id = conversationId
+  }
+  return JSON.stringify(body)
 }
 
-export async function sendChatQuery(query) {
+export async function fetchLatestConversation() {
   let response
-
   try {
-    response = await fetch(CHAT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        session_id: getSessionId(),
-        query,
-      }),
-    })
+    response = await authorizedFetch(LATEST_CONVERSATION_URL)
   } catch {
-    throw new Error(
-      'Could not reach the search engine. Make sure the FastAPI server is running at http://127.0.0.1:8000.',
-    )
+    throw new Error(UNREACHABLE)
   }
 
   let payload = null
@@ -90,32 +57,14 @@ export async function sendChatQuery(query) {
 
   if (!response.ok) {
     throw new Error(
-      readErrorDetail(
-        payload,
-        `The search engine could not complete this request (${response.status}). Please try again.`,
-      ),
+      readErrorDetail(payload, 'Could not load your conversation. Please try again.'),
     )
   }
 
-  const answer = extractAnswer(payload)
-  if (
-    payload &&
-    typeof payload.error === 'string' &&
-    payload.error.trim() &&
-    !answer
-  ) {
-    throw new Error(payload.error.trim())
+  return {
+    conversationId: payload?.conversation_id || null,
+    messages: Array.isArray(payload?.messages) ? payload.messages : [],
   }
-
-  if (!answer) {
-    throw new Error(
-      payload == null
-        ? 'The server returned an unexpected response. Please try again.'
-        : 'The search engine returned an empty answer. Please try a different question.',
-    )
-  }
-
-  return answer
 }
 
 function parseSseBlock(block) {
@@ -129,25 +78,21 @@ function parseSseBlock(block) {
   return JSON.parse(data)
 }
 
-export async function streamChatQuery(query, onDelta) {
+export async function streamChatQuery(query, onDelta, options = {}) {
+  const { conversationId, onConversationId } = options
   let response
 
   try {
-    response = await fetch(CHAT_STREAM_URL, {
+    response = await authorizedFetch(CHAT_STREAM_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        ...jsonHeaders(),
         Accept: 'text/event-stream',
       },
-      body: JSON.stringify({
-        session_id: getSessionId(),
-        query,
-      }),
+      body: chatBody(query, conversationId),
     })
   } catch {
-    throw new Error(
-      'Could not reach the search engine. Make sure the FastAPI server is running at http://127.0.0.1:8000.',
-    )
+    throw new Error(UNREACHABLE)
   }
 
   if (!response.ok) {
@@ -174,6 +119,7 @@ export async function streamChatQuery(query, onDelta) {
   const decoder = new TextDecoder()
   let buffer = ''
   let answer = ''
+  let resolvedConversationId = conversationId || null
 
   while (true) {
     const { value, done } = await reader.read()
@@ -193,6 +139,11 @@ export async function streamChatQuery(query, onDelta) {
 
       if (!payload) continue
 
+      if (typeof payload.conversation_id === 'string' && payload.conversation_id) {
+        resolvedConversationId = payload.conversation_id
+        onConversationId?.(payload.conversation_id)
+      }
+
       if (typeof payload.error === 'string' && payload.error.trim()) {
         throw new Error(payload.error.trim())
       }
@@ -210,5 +161,5 @@ export async function streamChatQuery(query, onDelta) {
     )
   }
 
-  return answer
+  return { answer, conversationId: resolvedConversationId }
 }

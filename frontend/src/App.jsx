@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { sendChatQuery } from './api/chat'
+import { streamChatQuery } from './api/chat'
 import { loadMessages, saveMessages } from './api/messages'
 import ChatWindow from './components/ChatWindow'
 import Header from './components/Header'
@@ -50,29 +50,42 @@ export default function App() {
 
     isLoadingRef.current = true
     setIsLoading(true)
-    setMessages((current) => [
-      ...current,
-      createMessage({ role: 'user', content: trimmed }),
-    ])
+    const userMessage = createMessage({ role: 'user', content: trimmed })
+    setMessages((current) => [...current, userMessage])
+
+    let assistantId = null
+
+    function upsertAssistant(partial) {
+      if (!assistantId) {
+        const assistantMessage = createMessage({
+          role: 'assistant',
+          content: '',
+          ...partial,
+        })
+        assistantId = assistantMessage.id
+        setMessages((current) => [...current, assistantMessage])
+        return
+      }
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId ? { ...message, ...partial } : message,
+        ),
+      )
+    }
 
     try {
-      const answer = await sendChatQuery(trimmed)
-      setMessages((current) => [
-        ...current,
-        createMessage({ role: 'assistant', content: answer }),
-      ])
+      await streamChatQuery(trimmed, (fullText) => {
+        upsertAssistant({ content: fullText, isError: false })
+      })
     } catch (error) {
-      setMessages((current) => [
-        ...current,
-        createMessage({
-          role: 'assistant',
-          isError: true,
-          content:
-            error instanceof Error
-              ? error.message
-              : 'Something went wrong. Please try again.',
-        }),
-      ])
+      upsertAssistant({
+        isError: true,
+        content:
+          error instanceof Error
+            ? error.message
+            : 'Something went wrong. Please try again.',
+      })
     } finally {
       isLoadingRef.current = false
       setIsLoading(false)

@@ -18,15 +18,17 @@
 
 
 
+import json
 import logging
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from src.search_engine.main import app as graph_app # عشان ما نخلطه مع: app = FastAPI() ( لا نستخدم نفس الاسم)
+from src.search_engine.main import stream_agent
 
 logger = logging.getLogger(__name__)
 
@@ -169,5 +171,60 @@ def chat(request:ChatRequest):
     return {
         "answer": answer
     }
+
+
+def sse_event(payload: dict) -> str:
+    # Server-Sent Events: one JSON object per "data:" line, blank line flush.
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@app.post("/chat/stream")
+def chat_stream(request: ChatRequest):
+    session_id = (request.session_id or "").strip()
+    query = (request.query or "").strip()
+
+    # Same input rules as /chat so streaming cannot start on an empty prompt.
+    if not session_id:
+        return error_response(400, "session_id is required.")
+    if not query:
+        return error_response(400, "Please enter a question.")
+
+    def generate():
+        # Generator keeps the HTTP connection open and flushes each token
+        # so the React client can render the answer as it is produced.
+        try:
+            yielded = False
+            for delta in stream_agent(session_id, query):
+                if not delta:
+                    continue
+                yielded = True
+                yield sse_event({"delta": delta})
+
+            if not yielded:
+                yield sse_event(
+                    {
+                        "error": "The search engine returned an empty answer. Please try again."
+                    }
+                )
+                return
+
+            yield sse_event({"done": True})
+        except Exception:
+            logger.exception("Streaming chat failed for session_id=%s", session_id)
+            yield sse_event(
+                {
+                    "error": "Something went wrong while generating an answer. Please try again."
+                }
+            )
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
     

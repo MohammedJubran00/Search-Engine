@@ -12,6 +12,10 @@ const EXAMPLE_QUERIES = [
 export default function ChatWindow({ messages, isLoading, onExampleSelect }) {
   const endRef = useRef(null)
   const isEmpty = messages.length === 0 && !isLoading
+  const lastMessage = messages[messages.length - 1]
+  const waitingForFirstToken =
+    isLoading &&
+    (!lastMessage || lastMessage.role !== 'assistant' || !lastMessage.content)
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -33,6 +37,7 @@ export default function ChatWindow({ messages, isLoading, onExampleSelect }) {
                 key={query}
                 type="button"
                 className="chat-window__example"
+                disabled={isLoading}
                 onClick={() => onExampleSelect(query)}
               >
                 {query}
@@ -45,7 +50,7 @@ export default function ChatWindow({ messages, isLoading, onExampleSelect }) {
           {messages.map((message) => (
             <MessageBubble key={message.id} message={message} />
           ))}
-          {isLoading ? <LoadingIndicator /> : null}
+          {waitingForFirstToken ? <LoadingIndicator /> : null}
           <div ref={endRef} />
         </div>
       )}

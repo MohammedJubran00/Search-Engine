@@ -1,6 +1,7 @@
 import { getSessionId } from './session'
 
 const CHAT_URL = 'http://127.0.0.1:8000/chat'
+const CHAT_STREAM_URL = 'http://127.0.0.1:8000/chat/stream'
 
 function readErrorDetail(payload, fallback) {
   if (!payload || typeof payload !== 'object') return fallback
@@ -111,6 +112,101 @@ export async function sendChatQuery(query) {
       payload == null
         ? 'The server returned an unexpected response. Please try again.'
         : 'The search engine returned an empty answer. Please try a different question.',
+    )
+  }
+
+  return answer
+}
+
+function parseSseBlock(block) {
+  const data = block
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trimStart())
+    .join('\n')
+
+  if (!data) return null
+  return JSON.parse(data)
+}
+
+export async function streamChatQuery(query, onDelta) {
+  let response
+
+  try {
+    response = await fetch(CHAT_STREAM_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({
+        session_id: getSessionId(),
+        query,
+      }),
+    })
+  } catch {
+    throw new Error(
+      'Could not reach the search engine. Make sure the FastAPI server is running at http://127.0.0.1:8000.',
+    )
+  }
+
+  if (!response.ok) {
+    let payload = null
+    try {
+      payload = await response.json()
+    } catch {
+      payload = null
+    }
+
+    throw new Error(
+      readErrorDetail(
+        payload,
+        `The search engine could not complete this request (${response.status}). Please try again.`,
+      ),
+    )
+  }
+
+  if (!response.body) {
+    throw new Error('The server returned an unexpected response. Please try again.')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let answer = ''
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const blocks = buffer.split('\n\n')
+    buffer = blocks.pop() ?? ''
+
+    for (const block of blocks) {
+      let payload
+      try {
+        payload = parseSseBlock(block)
+      } catch {
+        continue
+      }
+
+      if (!payload) continue
+
+      if (typeof payload.error === 'string' && payload.error.trim()) {
+        throw new Error(payload.error.trim())
+      }
+
+      if (typeof payload.delta === 'string' && payload.delta) {
+        answer += payload.delta
+        onDelta(answer)
+      }
+    }
+  }
+
+  if (!answer.trim()) {
+    throw new Error(
+      'The search engine returned an empty answer. Please try a different question.',
     )
   }
 

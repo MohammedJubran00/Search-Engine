@@ -10,7 +10,7 @@ export default function LoadingIndicator() {
           <span />
           <span />
         </span>
-        <p className="loading__text">Searching the web and writing an answer…</p>
+        <p className="loading__text">Thinking…</p>
       </div>
     </div>
   )

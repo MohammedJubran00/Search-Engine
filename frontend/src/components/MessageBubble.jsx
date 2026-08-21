@@ -25,6 +25,52 @@ const markdownComponents = {
       </a>
     )
   },
+  h1({ children }) {
+    return <h1>{children}</h1>
+  },
+  h2({ children }) {
+    return <h2>{children}</h2>
+  },
+  h3({ children }) {
+    return <h3>{children}</h3>
+  },
+  ul({ children }) {
+    return <ul>{children}</ul>
+  },
+  ol({ children }) {
+    return <ol>{children}</ol>
+  },
+  li({ children }) {
+    return <li>{children}</li>
+  },
+  table({ children }) {
+    return (
+      <div className="message__table-wrap">
+        <table>{children}</table>
+      </div>
+    )
+  },
+  thead({ children }) {
+    return <thead>{children}</thead>
+  },
+  tbody({ children }) {
+    return <tbody>{children}</tbody>
+  },
+  tr({ children }) {
+    return <tr>{children}</tr>
+  },
+  th({ children }) {
+    return <th>{children}</th>
+  },
+  td({ children }) {
+    return <td>{children}</td>
+  },
+  pre({ children }) {
+    return <pre>{children}</pre>
+  },
+  code({ className, children }) {
+    return <code className={className}>{children}</code>
+  },
 }
 
 export default function MessageBubble({ message }) {

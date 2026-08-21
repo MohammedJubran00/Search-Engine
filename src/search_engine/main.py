@@ -9,6 +9,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 from langchain_tavily import TavilySearch
 from langgraph.graph import  StateGraph, END
+from langchain_core.messages import AIMessageChunk
 
 
 load_dotenv()
@@ -124,6 +125,61 @@ def agent_node(state): #for chat history and session id
     #     "query": "Who founded OpenAI?",
     #     "answer": "..."
     # }________________________________________________________
+
+
+def _delta_text(content) -> str:
+    # Streaming chunks should concatenate with "" so tokens do not gain
+    # extra blank lines between pieces of the same sentence.
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(_delta_text(item) for item in content)
+    if isinstance(content, dict):
+        if content.get("type") in {"thinking", "reasoning"}:
+            return ""
+        if isinstance(content.get("text"), str):
+            return content["text"]
+        return ""
+    return ""
+
+
+def stream_agent(session_id: str, query: str):
+    # Same session memory as agent_node, but yields Gemini tokens as they
+    # arrive instead of waiting for the full invoke() result.
+    chat_history = list(sessions.get(session_id, []))
+    chat_history.append(("human", query))
+    full_answer = []
+
+    try:
+        for item in agent.stream(
+            {"messages": chat_history},
+            stream_mode="messages",
+        ):
+            message = item[0] if isinstance(item, tuple) else item
+            if not isinstance(message, AIMessageChunk):
+                continue
+
+            delta = _delta_text(getattr(message, "content", ""))
+            if not delta:
+                continue
+
+            full_answer.append(delta)
+            yield delta
+
+        answer = "".join(full_answer)
+        if not answer.strip():
+            raise RuntimeError("The agent returned an empty answer.")
+
+        chat_history.append(("assistant", answer))
+        sessions[session_id] = chat_history
+    except Exception:
+        logger.exception(
+            "LangGraph stream_agent failed for session_id=%r",
+            session_id,
+        )
+        raise
 
 
 graph=StateGraph(dict)

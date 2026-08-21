@@ -7,7 +7,8 @@ password contains `@`.
 Responsibility: expose a single `settings` object. Build the async SQLAlchemy
 URL from `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD`.
 
-Communicates with: `database.database` (reads `settings.database_url`).
+Communicates with: `database.database` (reads `settings.database_url`) and
+`core.security` (JWT secret and token lifetimes).
 Does not talk to FastAPI routes or the LangGraph agent.
 """
 
@@ -33,6 +34,10 @@ class Settings(BaseSettings):
     db_name: str
     db_user: str
     db_password: str
+    jwt_secret_key: str
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
+    jwt_algorithm: str = "HS256"
 
     def _postgres_url(self, driver: str) -> str:
         password = quote_plus(self.db_password)

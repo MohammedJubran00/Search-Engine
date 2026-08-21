@@ -23,9 +23,14 @@ export default function Header() {
             </p>
           </div>
         </div>
-        <a className="header__signup" href="/signup.html">
-          Sign up
-        </a>
+        <div className="header__actions">
+          <a className="header__login" href="/login.html">
+            Log in
+          </a>
+          <a className="header__signup" href="/signup.html">
+            Sign up
+          </a>
+        </div>
       </div>
     </header>
   )

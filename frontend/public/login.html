@@ -6,8 +6,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Create an AI Search Engine account." />
-    <title>Sign up — AI Search Engine</title>
+    <meta name="description" content="Log in to AI Search Engine." />
+    <title>Log in — AI Search Engine</title>
     <link rel="stylesheet" href="/signup.css" />
   </head>
   <body>
@@ -27,32 +27,20 @@
           </span>
           <span class="auth__brand-text">
             <span class="auth__title">AI Search Engine</span>
-            <span class="auth__subtitle">Create your account</span>
+            <span class="auth__subtitle">Welcome back</span>
           </span>
         </a>
       </header>
 
       <main class="auth__main">
-        <section class="auth__card" aria-labelledby="signup-heading">
-          <h1 id="signup-heading" class="auth__heading">Sign up</h1>
-          <p class="auth__lead">Use a unique email and a strong password. You can search without an account for now.</p>
+        <section class="auth__card" aria-labelledby="login-heading">
+          <h1 id="login-heading" class="auth__heading">Log in</h1>
+          <p class="auth__lead">Use the email and password you created at signup. Search still works without logging in.</p>
 
           <div class="auth__banner auth__banner--error" id="form-error" hidden role="alert"></div>
           <div class="auth__banner auth__banner--success" id="form-success" hidden role="status"></div>
 
-          <form id="signup-form" class="auth__form" novalidate>
-            <label class="auth__label" for="full_name">Full name</label>
-            <input
-              class="auth__input"
-              id="full_name"
-              name="full_name"
-              type="text"
-              autocomplete="name"
-              maxlength="255"
-              required
-            />
-            <p class="auth__field-error" id="full_name-error" hidden></p>
-
+          <form id="login-form" class="auth__form" novalidate>
             <label class="auth__label" for="email">Email</label>
             <input
               class="auth__input"
@@ -72,7 +60,7 @@
                 id="password"
                 name="password"
                 type="password"
-                autocomplete="new-password"
+                autocomplete="current-password"
                 required
               />
               <button
@@ -85,24 +73,21 @@
                 Show
               </button>
             </div>
-            <p class="auth__hint">
-              At least 8 characters, with uppercase, lowercase, a number, and a special character.
-            </p>
             <p class="auth__field-error" id="password-error" hidden></p>
 
             <button class="auth__submit" id="submit-btn" type="submit">
-              <span class="auth__submit-label">Create account</span>
+              <span class="auth__submit-label">Log in</span>
               <span class="auth__spinner" id="submit-spinner" hidden aria-hidden="true"></span>
             </button>
           </form>
 
           <p class="auth__switch">
-            Already have an account?
-            <a href="/login.html">Log in</a>
+            Need an account?
+            <a href="/signup.html">Sign up</a>
           </p>
         </section>
       </main>
     </div>
-    <script src="/signup.js" defer></script>
+    <script src="/login.js" defer></script>
   </body>
 </html>

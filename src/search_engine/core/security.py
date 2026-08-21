@@ -1,18 +1,23 @@
-"""Password hashing and password-strength rules.
+"""Password hashing, password-strength rules, and JWT helpers.
 
-Why it exists: signup must store bcrypt hashes, not plaintext, and strength
-rules must live in one place.
+Why it exists: signup stores bcrypt hashes; login issues JWT access and
+refresh tokens. Strength rules and token creation must live in one place.
 
-Responsibility: validate password rules and hash passwords. No JWT in this
-task. No HTTP, no database.
+Responsibility: validate/hash/verify passwords and encode JWTs. No HTTP,
+no database.
 
-Communicates with: `schemas.auth` (validation) and `services.auth_service`
-(hashing before insert).
+Communicates with: `schemas.auth` (password rules), `services.auth_service`
+(hashing and token creation), and `core.config` (JWT secret and expiries).
 """
 
 import re
+import uuid
+from datetime import datetime, timedelta, timezone
 
+import jwt
 from passlib.context import CryptContext
+
+from src.search_engine.core.config import settings
 
 _PWD_CONTEXT = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -41,3 +46,46 @@ def validate_password(password: str) -> str:
 def hash_password(password: str) -> str:
     """Return a bcrypt hash of `password`."""
     return _PWD_CONTEXT.hash(password)
+
+
+def verify_password(plain_password: str, password_hash: str) -> bool:
+    """Return True if `plain_password` matches `password_hash`."""
+    return _PWD_CONTEXT.verify(plain_password, password_hash)
+
+
+def _create_token(
+    *,
+    user_id: uuid.UUID,
+    token_type: str,
+    expires_delta: timedelta,
+) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user_id),
+        "type": token_type,
+        "iat": now,
+        "exp": now + expires_delta,
+    }
+    return jwt.encode(
+        payload,
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
+
+
+def create_access_token(user_id: uuid.UUID) -> str:
+    """Return a short-lived JWT access token for `user_id`."""
+    return _create_token(
+        user_id=user_id,
+        token_type="access",
+        expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
+    )
+
+
+def create_refresh_token(user_id: uuid.UUID) -> str:
+    """Return a longer-lived JWT refresh token for `user_id`."""
+    return _create_token(
+        user_id=user_id,
+        token_type="refresh",
+        expires_delta=timedelta(days=settings.refresh_token_expire_days),
+    )

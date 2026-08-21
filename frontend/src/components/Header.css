@@ -17,6 +17,25 @@
   padding: 16px 0;
 }
 
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.header__login {
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.header__login:hover {
+  color: var(--accent);
+}
+
 .header__signup {
   flex-shrink: 0;
   padding: 8px 14px;

@@ -1,4 +1,4 @@
 """Authentication business rules.
 
-Signup belongs here — not in routers. Login is a later task.
+Signup and login belong here — not in routers.
 """

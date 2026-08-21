@@ -3,7 +3,7 @@
 Why it exists: FastAPI needs typed request bodies and safe response shapes
 that never include `password_hash`.
 
-Responsibility: validate signup input. No hashing, no SQL.
+Responsibility: validate signup and login input. No hashing, no SQL.
 
 Communicates with: `core.security.validate_password` and `auth_router`.
 """
@@ -14,6 +14,13 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from src.search_engine.core.security import validate_password
+
+
+def normalize_email(value: object) -> object:
+    """Lowercase and trim an email string; leave other values unchanged."""
+    if isinstance(value, str):
+        return value.strip().lower()
+    return value
 
 
 class SignupRequest(BaseModel):
@@ -33,10 +40,8 @@ class SignupRequest(BaseModel):
 
     @field_validator("email", mode="before")
     @classmethod
-    def normalize_email(cls, value: object) -> object:
-        if isinstance(value, str):
-            return value.strip().lower()
-        return value
+    def normalize_email_field(cls, value: object) -> object:
+        return normalize_email(value)
 
     @field_validator("password")
     @classmethod
@@ -55,3 +60,23 @@ class SignupResponse(BaseModel):
     is_verified: bool
     created_at: datetime
     updated_at: datetime
+
+
+class LoginRequest(BaseModel):
+    """Body for `POST /api/auth/login`."""
+
+    email: EmailStr
+    password: str = Field(min_length=1)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email_field(cls, value: object) -> object:
+        return normalize_email(value)
+
+
+class LoginResponse(BaseModel):
+    """JWT pair returned after a successful login. No password."""
+
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"

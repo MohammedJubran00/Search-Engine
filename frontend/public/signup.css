@@ -277,6 +277,13 @@ a {
   font-weight: 600;
 }
 
+.auth__switch {
+  margin: 18px 0 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
 @keyframes auth-spin {
   to {
     transform: rotate(360deg);

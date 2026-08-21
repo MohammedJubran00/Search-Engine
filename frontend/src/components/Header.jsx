@@ -23,6 +23,9 @@ export default function Header() {
             </p>
           </div>
         </div>
+        <a className="header__signup" href="/signup.html">
+          Sign up
+        </a>
       </div>
     </header>
   )

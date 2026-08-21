@@ -8,9 +8,31 @@
 }
 
 .header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   width: min(var(--content-width), calc(100% - 32px));
   margin: 0 auto;
   padding: 16px 0;
+}
+
+.header__signup {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid rgba(94, 234, 212, 0.22);
+  border-radius: 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.header__signup:hover {
+  color: #06201b;
+  background: var(--accent);
 }
 
 .header__brand {
@@ -64,5 +86,11 @@
 
   .header__subtitle {
     font-size: 0.8rem;
+  }
+
+  .header__signup {
+    padding: 7px 10px;
+    font-size: 0.8rem;
+    border-radius: 10px;
   }
 }

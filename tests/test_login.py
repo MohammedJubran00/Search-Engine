@@ -1,4 +1,4 @@
-"""Login endpoint tests. Refresh, logout, and /me are not covered here."""
+"""Login endpoint tests. `/me`, refresh, and logout are in test_auth_me.py."""
 
 from fastapi.testclient import TestClient
 

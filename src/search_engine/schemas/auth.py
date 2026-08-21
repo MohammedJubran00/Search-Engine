@@ -3,7 +3,7 @@
 Why it exists: FastAPI needs typed request bodies and safe response shapes
 that never include `password_hash`.
 
-Responsibility: validate signup and login input. No hashing, no SQL.
+Responsibility: validate signup, login, and refresh input. No hashing, no SQL.
 
 Communicates with: `core.security.validate_password` and `auth_router`.
 """
@@ -49,8 +49,8 @@ class SignupRequest(BaseModel):
         return validate_password(value)
 
 
-class SignupResponse(BaseModel):
-    """Public user fields returned after signup. No password."""
+class UserPublic(BaseModel):
+    """Public user fields. Never includes password hashes."""
 
     model_config = {"from_attributes": True}
 
@@ -60,6 +60,10 @@ class SignupResponse(BaseModel):
     is_verified: bool
     created_at: datetime
     updated_at: datetime
+
+
+class SignupResponse(UserPublic):
+    """Public user fields returned after signup. No password."""
 
 
 class LoginRequest(BaseModel):
@@ -80,3 +84,9 @@ class LoginResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+class RefreshRequest(BaseModel):
+    """Body for `POST /api/auth/refresh`."""
+
+    refresh_token: str = Field(min_length=1)

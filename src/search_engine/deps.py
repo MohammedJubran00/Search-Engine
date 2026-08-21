@@ -8,7 +8,7 @@ Responsibility: require `Authorization: Bearer <access_token>` and return
 the `User`. 401 if the token is missing, invalid, or the user is gone.
 
 Communicates with: `core.security.decode_access_token`, `UserRepository`,
-and `database.get_db`. Not a `/me` endpoint.
+`database.get_db`, `/api/auth/me`, and protected chat routes.
 """
 
 from typing import Annotated
@@ -21,20 +21,20 @@ from src.search_engine.database.database import get_db
 from src.search_engine.models.user import User
 from src.search_engine.repositories.user_repository import UserRepository
 
-_NOT_AUTHENTICATED = "Not authenticated."
+NOT_AUTHENTICATED = "Not authenticated."
 
 
 def _bearer_token(authorization: str | None) -> str:
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=_NOT_AUTHENTICATED,
+            detail=NOT_AUTHENTICATED,
         )
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=_NOT_AUTHENTICATED,
+            detail=NOT_AUTHENTICATED,
         )
     return token.strip()
 
@@ -50,13 +50,13 @@ async def get_current_user(
     except InvalidAccessTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=_NOT_AUTHENTICATED,
+            detail=NOT_AUTHENTICATED,
         ) from None
 
     user = await UserRepository(db).get_by_id(user_id)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=_NOT_AUTHENTICATED,
+            detail=NOT_AUTHENTICATED,
         )
     return user

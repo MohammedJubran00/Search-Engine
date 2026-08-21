@@ -1,4 +1,4 @@
-import { authHeaders, redirectIfUnauthorized } from './auth'
+import { authorizedFetch }
 
 const CHAT_URL = '/chat'
 const CHAT_STREAM_URL = '/chat/stream'
@@ -65,7 +65,6 @@ function extractAnswer(payload) {
 function jsonHeaders() {
   return {
     'Content-Type': 'application/json',
-    ...authHeaders(),
   }
 }
 
@@ -80,17 +79,11 @@ function chatBody(query, conversationId) {
 export async function fetchLatestConversation() {
   let response
   try {
-    response = await fetch(LATEST_CONVERSATION_URL, {
-      headers: authHeaders(),
-    })
+    response = await authorizedFetch(LATEST_CONVERSATION_URL)
   } catch {
     throw new Error(
       'Could not reach the search engine. Make sure the FastAPI server is running at http://127.0.0.1:8000.',
     )
-  }
-
-  if (redirectIfUnauthorized(response.status)) {
-    throw new Error('Not authenticated.')
   }
 
   let payload = null
@@ -116,7 +109,7 @@ export async function sendChatQuery(query, conversationId) {
   let response
 
   try {
-    response = await fetch(CHAT_URL, {
+    response = await authorizedFetch(CHAT_URL, {
       method: 'POST',
       headers: jsonHeaders(),
       body: chatBody(query, conversationId),
@@ -125,10 +118,6 @@ export async function sendChatQuery(query, conversationId) {
     throw new Error(
       'Could not reach the search engine. Make sure the FastAPI server is running at http://127.0.0.1:8000.',
     )
-  }
-
-  if (redirectIfUnauthorized(response.status)) {
-    throw new Error('Not authenticated.')
   }
 
   let payload = null
@@ -187,7 +176,7 @@ export async function streamChatQuery(query, onDelta, options = {}) {
   let response
 
   try {
-    response = await fetch(CHAT_STREAM_URL, {
+    response = await authorizedFetch(CHAT_STREAM_URL, {
       method: 'POST',
       headers: {
         ...jsonHeaders(),
@@ -199,10 +188,6 @@ export async function streamChatQuery(query, onDelta, options = {}) {
     throw new Error(
       'Could not reach the search engine. Make sure the FastAPI server is running at http://127.0.0.1:8000.',
     )
-  }
-
-  if (redirectIfUnauthorized(response.status)) {
-    throw new Error('Not authenticated.')
   }
 
   if (!response.ok) {

@@ -91,12 +91,15 @@ def create_refresh_token(user_id: uuid.UUID) -> str:
     )
 
 
-class InvalidAccessTokenError(Exception):
-    """Raised when an access token is missing, expired, or not an access JWT."""
+class InvalidTokenError(Exception):
+    """Raised when a JWT is missing, expired, or the wrong type."""
 
 
-def decode_access_token(token: str) -> uuid.UUID:
-    """Return `users.id` from a valid access token. Does not load the user row."""
+InvalidAccessTokenError = InvalidTokenError
+
+
+def _decode_typed_token(token: str, expected_type: str) -> uuid.UUID:
+    """Return `users.id` from a JWT whose `type` claim matches `expected_type`."""
     try:
         payload = jwt.decode(
             token,
@@ -104,16 +107,26 @@ def decode_access_token(token: str) -> uuid.UUID:
             algorithms=[settings.jwt_algorithm],
         )
     except jwt.InvalidTokenError as exc:
-        raise InvalidAccessTokenError from exc
+        raise InvalidTokenError from exc
 
-    if payload.get("type") != "access":
-        raise InvalidAccessTokenError
+    if payload.get("type") != expected_type:
+        raise InvalidTokenError
 
     sub = payload.get("sub")
     if not isinstance(sub, str) or not sub.strip():
-        raise InvalidAccessTokenError
+        raise InvalidTokenError
 
     try:
         return uuid.UUID(sub)
     except ValueError as exc:
-        raise InvalidAccessTokenError from exc
+        raise InvalidTokenError from exc
+
+
+def decode_access_token(token: str) -> uuid.UUID:
+    """Return `users.id` from a valid access token. Does not load the user row."""
+    return _decode_typed_token(token, "access")
+
+
+def decode_refresh_token(token: str) -> uuid.UUID:
+    """Return `users.id` from a valid refresh token. Does not load the user row."""
+    return _decode_typed_token(token, "refresh")

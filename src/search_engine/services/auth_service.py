@@ -3,9 +3,9 @@
 Why it exists: duplicate-email checks, credential checks, hashing, and JWT
 issuance must not live in the router or the repository.
 
-Responsibility: `signup` and `login`. Login issues tokens but does not
-implement refresh/logout. Raises `DuplicateEmailError` or
-`InvalidCredentialsError`.
+Responsibility: `signup`, `login`, and `refresh`. Logout is client token
+clear after an authenticated `POST /logout`. Raises `DuplicateEmailError`
+or `InvalidCredentialsError`.
 
 Communicates with: `UserRepository`, `core.security`, and `auth_router`.
 """
@@ -17,8 +17,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.search_engine.core.security import (
+    InvalidTokenError,
     create_access_token,
     create_refresh_token,
+    decode_refresh_token,
     hash_password,
     verify_password,
 )
@@ -70,6 +72,18 @@ class AuthService:
         if user is None or not verify_password(password, user.password_hash):
             raise InvalidCredentialsError
         user_id: UUID = user.id
+        return self._tokens_for(user_id)
+
+    async def refresh(self, refresh_token: str) -> AuthTokens:
+        """Issue a new JWT pair from a valid refresh token. Access tokens are rejected."""
+        user_id = decode_refresh_token(refresh_token)
+        user = await self._users.get_by_id(user_id)
+        if user is None:
+            raise InvalidTokenError
+        return self._tokens_for(user.id)
+
+    def _tokens_for(self, user_id: UUID) -> AuthTokens:
+        """Create the access + refresh pair. One place so login and refresh stay aligned."""
         return AuthTokens(
             access_token=create_access_token(user_id),
             refresh_token=create_refresh_token(user_id),

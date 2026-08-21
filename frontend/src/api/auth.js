@@ -1,10 +1,9 @@
 /*
  * Why it exists: login.html already stores JWTs in localStorage under these
- * keys. Chat must send the same access token so identity is JWT.sub, not
- * session_id.
+ * keys. Chat, /me, refresh, and logout must use the same storage.
  *
- * Responsibility: read/clear the access token and send unauthenticated users
- * to Login.
+ * Responsibility: read/write tokens, attach Bearer headers, refresh once on
+ * 401, and send unauthenticated users to Login.
  */
 
 export const ACCESS_TOKEN_KEY = 'ai-search-engine-access-token'
@@ -12,13 +11,40 @@ export const REFRESH_TOKEN_KEY = 'ai-search-engine-refresh-token'
 export const LOGIN_PATH = '/login.html'
 export const CHAT_PATH = '/app.html'
 
-export function getAccessToken() {
+const ME_URL = '/api/auth/me'
+const REFRESH_URL = '/api/auth/refresh'
+const LOGOUT_URL = '/api/auth/logout'
+
+let refreshInFlight = null
+
+function readStorage(key) {
   try {
-    const token = localStorage.getItem(ACCESS_TOKEN_KEY)
-    return token && token.trim() ? token.trim() : ''
+    const value = localStorage.getItem(key)
+    return value && value.trim() ? value.trim() : ''
   } catch {
     return ''
   }
+}
+
+function writeStorage(key, value) {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // localStorage can be unavailable
+  }
+}
+
+export function getAccessToken() {
+  return readStorage(ACCESS_TOKEN_KEY)
+}
+
+export function getRefreshToken() {
+  return readStorage(REFRESH_TOKEN_KEY)
+}
+
+export function storeTokens(accessToken, refreshToken) {
+  writeStorage(ACCESS_TOKEN_KEY, accessToken)
+  writeStorage(REFRESH_TOKEN_KEY, refreshToken)
 }
 
 export function isAuthenticated() {
@@ -45,8 +71,83 @@ export function redirectToLogin() {
   window.location.replace(LOGIN_PATH)
 }
 
-export function redirectIfUnauthorized(status) {
-  if (status !== 401) return false
+async function refreshSession() {
+  if (refreshInFlight) return refreshInFlight
+
+  refreshInFlight = (async () => {
+    const refreshToken = getRefreshToken()
+    if (!refreshToken) return false
+
+    let response
+    try {
+      response = await fetch(REFRESH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      })
+    } catch {
+      return false
+    }
+
+    if (!response.ok) return false
+
+    let payload = null
+    try {
+      payload = await response.json()
+    } catch {
+      return false
+    }
+
+    if (!payload?.access_token || !payload?.refresh_token) return false
+    storeTokens(payload.access_token, payload.refresh_token)
+    return true
+  })()
+
+  try {
+    return await refreshInFlight
+  } finally {
+    refreshInFlight = null
+  }
+}
+
+export async function authorizedFetch(url, options = {}, isRetry = false) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      ...authHeaders(),
+    },
+  })
+
+  if (response.status !== 401) return response
+
+  if (!isRetry) {
+    const refreshed = await refreshSession()
+    if (refreshed) {
+      return authorizedFetch(url, options, true)
+    }
+  }
+
   redirectToLogin()
-  return true
+  return response
+}
+
+export async function fetchCurrentUser() {
+  const response = await authorizedFetch(ME_URL)
+  if (!response.ok) {
+    throw new Error('Could not load your account.')
+  }
+  return response.json()
+}
+
+export async function logout() {
+  try {
+    await fetch(LOGOUT_URL, {
+      method: 'POST',
+      headers: authHeaders(),
+    })
+  } catch {
+    // Still clear local tokens if the API is unreachable.
+  }
+  redirectToLogin()
 }

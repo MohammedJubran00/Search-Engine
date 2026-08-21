@@ -5,6 +5,10 @@ const CHAT_URL = 'http://127.0.0.1:8000/chat'
 function readErrorDetail(payload, fallback) {
   if (!payload || typeof payload !== 'object') return fallback
 
+  if (typeof payload.error === 'string' && payload.error.trim()) {
+    return payload.error.trim()
+  }
+
   const detail = payload.detail
   if (typeof detail === 'string' && detail.trim()) return detail
   if (Array.isArray(detail) && detail.length > 0) {
@@ -93,6 +97,15 @@ export async function sendChatQuery(query) {
   }
 
   const answer = extractAnswer(payload)
+  if (
+    payload &&
+    typeof payload.error === 'string' &&
+    payload.error.trim() &&
+    !answer
+  ) {
+    throw new Error(payload.error.trim())
+  }
+
   if (!answer) {
     throw new Error(
       payload == null

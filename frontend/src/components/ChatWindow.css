@@ -66,9 +66,14 @@
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.chat-window__example:hover {
+.chat-window__example:hover:not(:disabled) {
   background: var(--bg-panel);
   border-color: var(--border-strong);
+}
+
+.chat-window__example:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .chat-window__messages {

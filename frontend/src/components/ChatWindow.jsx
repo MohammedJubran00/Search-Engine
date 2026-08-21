@@ -33,6 +33,7 @@ export default function ChatWindow({ messages, isLoading, onExampleSelect }) {
                 key={query}
                 type="button"
                 className="chat-window__example"
+                disabled={isLoading}
                 onClick={() => onExampleSelect(query)}
               >
                 {query}

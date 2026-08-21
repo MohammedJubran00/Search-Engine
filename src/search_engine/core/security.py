@@ -95,9 +95,6 @@ class InvalidTokenError(Exception):
     """Raised when a JWT is missing, expired, or the wrong type."""
 
 
-InvalidAccessTokenError = InvalidTokenError
-
-
 def _decode_typed_token(token: str, expected_type: str) -> uuid.UUID:
     """Return `users.id` from a JWT whose `type` claim matches `expected_type`."""
     try:

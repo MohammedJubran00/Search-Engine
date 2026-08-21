@@ -1,7 +1,7 @@
 const LOGIN_URL = '/api/auth/login'
-const ACCESS_TOKEN_KEY = 'ai-search-engine-access-token'
-const REFRESH_TOKEN_KEY = 'ai-search-engine-refresh-token'
-const CHAT_PATH = '/app.html'
+const ACCESS_TOKEN_KEY = window.AUTH_CONFIG.ACCESS_TOKEN_KEY
+const REFRESH_TOKEN_KEY = window.AUTH_CONFIG.REFRESH_TOKEN_KEY
+const CHAT_PATH = window.AUTH_CONFIG.CHAT_PATH
 
 const form = document.getElementById('login-form')
 const submitBtn = document.getElementById('submit-btn')

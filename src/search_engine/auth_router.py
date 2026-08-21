@@ -27,6 +27,7 @@ from src.search_engine.schemas.auth import (
 )
 from src.search_engine.services.auth_service import (
     AuthService,
+    AuthTokens,
     DuplicateEmailError,
     InvalidCredentialsError,
 )
@@ -34,6 +35,13 @@ from src.search_engine.services.auth_service import (
 router = APIRouter()
 
 _INVALID_CREDENTIALS = "Invalid email or password."
+
+
+def _token_payload(tokens: AuthTokens) -> LoginResponse:
+    return LoginResponse(
+        access_token=tokens.access_token,
+        refresh_token=tokens.refresh_token,
+    )
 
 
 @router.post(
@@ -75,10 +83,7 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=_INVALID_CREDENTIALS,
         ) from None
-    return LoginResponse(
-        access_token=tokens.access_token,
-        refresh_token=tokens.refresh_token,
-    )
+    return _token_payload(tokens)
 
 
 @router.get("/me", response_model=UserPublic)
@@ -100,10 +105,7 @@ async def refresh(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=NOT_AUTHENTICATED,
         ) from None
-    return LoginResponse(
-        access_token=tokens.access_token,
-        refresh_token=tokens.refresh_token,
-    )
+    return _token_payload(tokens)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

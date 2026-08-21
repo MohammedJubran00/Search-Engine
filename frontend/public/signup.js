@@ -166,7 +166,7 @@ form.addEventListener('submit', async (event) => {
   setLoading(false)
 
   if (response.status === 201) {
-    window.location.replace('/login.html?signup=success')
+    window.location.replace(window.AUTH_CONFIG.SIGNUP_SUCCESS_PATH)
     return
   }
 

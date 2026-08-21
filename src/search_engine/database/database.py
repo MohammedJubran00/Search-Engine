@@ -1,13 +1,14 @@
 """Async SQLAlchemy engine and session dependency.
 
-Why it exists: FastAPI and future repositories need a shared PostgreSQL
-session. Chat currently stays in-memory in `main.py` and does not use this.
+Why it exists: FastAPI routes and repositories share one PostgreSQL session
+factory. LangGraph still keeps in-process agent memory; persisted chat rows
+go through this session.
 
 Responsibility: create the async engine, session factory, `get_db`, and the
 declarative `Base` that ORM models inherit from. Does not run migrations.
 
-Communicates with: `core.config` (database URL), `models.user` (`Base`), and
-`auth_router` via `get_db`. Search endpoints do not use this module.
+Communicates with: `core.config` (database URL), ORM models (`Base`),
+`get_current_user`, and chat/auth routers via `get_db`.
 """
 
 from collections.abc import AsyncIterator

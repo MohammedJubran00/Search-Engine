@@ -134,25 +134,13 @@ def to_answer_text(content) -> str:
 
 
 _STREAM_END = object()
+_EMPTY_QUERY = "Please enter a question."
+_CONVERSATION_NOT_FOUND = "Conversation not found."
 
 
 def graph_thread_id(conversation_id: uuid.UUID) -> str:
     """LangGraph in-memory key. Not an identity claim — ownership was already checked."""
     return str(conversation_id)
-
-
-async def persist_user_turn(
-    db: AsyncSession,
-    user: User,
-    conversation_id: uuid.UUID | None,
-    query: str,
-):
-    """Create/load the owned conversation and store the user message."""
-    return await ChatService(db).start_user_turn(
-        user_id=user.id,
-        conversation_id=conversation_id,
-        query=query,
-    )
 
 
 @app.get("/")
@@ -168,17 +156,17 @@ async def chat(
 ):
     query = (request.query or "").strip()
     if not query:
-        return error_response(400, "Please enter a question.")
+        return error_response(400, _EMPTY_QUERY)
 
+    service = ChatService(db)
     try:
-        conversation = await persist_user_turn(
-            db,
-            user,
-            request.conversation_id,
-            query,
+        conversation = await service.start_user_turn(
+            user_id=user.id,
+            conversation_id=request.conversation_id,
+            query=query,
         )
     except ConversationNotFoundError:
-        return error_response(404, "Conversation not found.")
+        return error_response(404, _CONVERSATION_NOT_FOUND)
 
     thread_id = graph_thread_id(conversation.id)
 
@@ -214,13 +202,13 @@ async def chat(
         )
 
     try:
-        await ChatService(db).add_assistant_message(
+        await service.add_assistant_message(
             user_id=user.id,
             conversation_id=conversation.id,
             content=answer,
         )
     except ConversationNotFoundError:
-        return error_response(404, "Conversation not found.")
+        return error_response(404, _CONVERSATION_NOT_FOUND)
 
     return ChatResponse(answer=answer, conversation_id=conversation.id)
 
@@ -238,17 +226,17 @@ async def chat_stream(
 ):
     query = (request.query or "").strip()
     if not query:
-        return error_response(400, "Please enter a question.")
+        return error_response(400, _EMPTY_QUERY)
 
+    service = ChatService(db)
     try:
-        conversation = await persist_user_turn(
-            db,
-            user,
-            request.conversation_id,
-            query,
+        conversation = await service.start_user_turn(
+            user_id=user.id,
+            conversation_id=request.conversation_id,
+            query=query,
         )
     except ConversationNotFoundError:
-        return error_response(404, "Conversation not found.")
+        return error_response(404, _CONVERSATION_NOT_FOUND)
 
     conversation_id = conversation.id
     user_id = user.id
@@ -280,13 +268,13 @@ async def chat_stream(
                 return
 
             try:
-                await ChatService(db).add_assistant_message(
+                await service.add_assistant_message(
                     user_id=user_id,
                     conversation_id=conversation_id,
                     content=answer,
                 )
             except ConversationNotFoundError:
-                yield sse_event({"error": "Conversation not found."})
+                yield sse_event({"error": _CONVERSATION_NOT_FOUND})
                 return
 
             yield sse_event({"done": True, "conversation_id": str(conversation_id)})

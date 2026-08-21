@@ -2,24 +2,11 @@
 
 from fastapi.testclient import TestClient
 
-from tests.test_login import LOGIN_URL
-from tests.test_signup import SIGNUP_URL, _signup_payload
+from tests.auth_helpers import signup_and_login
 
 ME_URL = "/api/auth/me"
 REFRESH_URL = "/api/auth/refresh"
 LOGOUT_URL = "/api/auth/logout"
-
-
-def _signup_and_login(client: TestClient) -> tuple[dict[str, object], dict[str, str]]:
-    payload = _signup_payload()
-    signup = client.post(SIGNUP_URL, json=payload)
-    assert signup.status_code == 201
-    login = client.post(
-        LOGIN_URL,
-        json={"email": payload["email"], "password": payload["password"]},
-    )
-    assert login.status_code == 200
-    return payload, login.json()
 
 
 def test_me_requires_access_token(client: TestClient) -> None:
@@ -29,7 +16,7 @@ def test_me_requires_access_token(client: TestClient) -> None:
 
 
 def test_me_returns_public_profile(client: TestClient) -> None:
-    payload, tokens = _signup_and_login(client)
+    payload, tokens = signup_and_login(client)
     response = client.get(
         ME_URL,
         headers={"Authorization": f"Bearer {tokens['access_token']}"},
@@ -45,7 +32,7 @@ def test_me_returns_public_profile(client: TestClient) -> None:
 
 
 def test_refresh_issues_new_tokens(client: TestClient) -> None:
-    _, tokens = _signup_and_login(client)
+    _, tokens = signup_and_login(client)
     response = client.post(
         REFRESH_URL,
         json={"refresh_token": tokens["refresh_token"]},
@@ -65,7 +52,7 @@ def test_refresh_issues_new_tokens(client: TestClient) -> None:
 
 
 def test_access_token_cannot_refresh(client: TestClient) -> None:
-    _, tokens = _signup_and_login(client)
+    _, tokens = signup_and_login(client)
     response = client.post(
         REFRESH_URL,
         json={"refresh_token": tokens["access_token"]},
@@ -85,7 +72,7 @@ def test_logout_requires_access_token(client: TestClient) -> None:
 
 
 def test_logout_returns_no_content(client: TestClient) -> None:
-    _, tokens = _signup_and_login(client)
+    _, tokens = signup_and_login(client)
     response = client.post(
         LOGOUT_URL,
         headers={"Authorization": f"Bearer {tokens['access_token']}"},

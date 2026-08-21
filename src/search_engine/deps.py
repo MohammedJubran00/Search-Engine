@@ -16,7 +16,7 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.search_engine.core.security import InvalidAccessTokenError, decode_access_token
+from src.search_engine.core.security import InvalidTokenError, decode_access_token
 from src.search_engine.database.database import get_db
 from src.search_engine.models.user import User
 from src.search_engine.repositories.user_repository import UserRepository
@@ -24,18 +24,19 @@ from src.search_engine.repositories.user_repository import UserRepository
 NOT_AUTHENTICATED = "Not authenticated."
 
 
+def _unauthorized() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=NOT_AUTHENTICATED,
+    )
+
+
 def _bearer_token(authorization: str | None) -> str:
     if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=NOT_AUTHENTICATED,
-        )
+        raise _unauthorized()
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=NOT_AUTHENTICATED,
-        )
+        raise _unauthorized()
     return token.strip()
 
 
@@ -47,16 +48,10 @@ async def get_current_user(
     token = _bearer_token(authorization)
     try:
         user_id = decode_access_token(token)
-    except InvalidAccessTokenError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=NOT_AUTHENTICATED,
-        ) from None
+    except InvalidTokenError:
+        raise _unauthorized() from None
 
     user = await UserRepository(db).get_by_id(user_id)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=NOT_AUTHENTICATED,
-        )
+        raise _unauthorized()
     return user

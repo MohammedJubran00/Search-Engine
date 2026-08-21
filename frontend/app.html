@@ -11,17 +11,18 @@
       content="AI Search Engine — search the web and get clear answers."
     />
     <title>AI Search Engine</title>
+    <script src="/auth-config.js"></script>
     <script>
-      // Same key as frontend/public/login.js. Chat is not the document at /.
+      // Same AUTH_CONFIG keys as Login. Chat is not the document at /.
       (function () {
         var token = ''
         try {
-          token = localStorage.getItem('ai-search-engine-access-token') || ''
+          token = localStorage.getItem(window.AUTH_CONFIG.ACCESS_TOKEN_KEY) || ''
         } catch (error) {
           token = ''
         }
         if (!String(token).trim()) {
-          location.replace('/login.html')
+          location.replace(window.AUTH_CONFIG.LOGIN_PATH)
         }
       })()
     </script>

@@ -1,15 +1,16 @@
 /*
- * Why it exists: login.html already stores JWTs in localStorage under these
- * keys. Chat, /me, refresh, and logout must use the same storage.
+ * Why it exists: login.html already stores JWTs in localStorage under the
+ * keys in AUTH_CONFIG. Chat, /me, refresh, and logout must use that same store.
  *
  * Responsibility: read/write tokens, attach Bearer headers, refresh once on
  * 401, and send unauthenticated users to Login.
  */
 
-export const ACCESS_TOKEN_KEY = 'ai-search-engine-access-token'
-export const REFRESH_TOKEN_KEY = 'ai-search-engine-refresh-token'
-export const LOGIN_PATH = '/login.html'
-export const CHAT_PATH = '/app.html'
+const AUTH = window.AUTH_CONFIG
+
+export const ACCESS_TOKEN_KEY = AUTH.ACCESS_TOKEN_KEY
+export const REFRESH_TOKEN_KEY = AUTH.REFRESH_TOKEN_KEY
+export const LOGIN_PATH = AUTH.LOGIN_PATH
 
 const ME_URL = '/api/auth/me'
 const REFRESH_URL = '/api/auth/refresh'
@@ -38,7 +39,7 @@ export function getAccessToken() {
   return readStorage(ACCESS_TOKEN_KEY)
 }
 
-export function getRefreshToken() {
+function getRefreshToken() {
   return readStorage(REFRESH_TOKEN_KEY)
 }
 

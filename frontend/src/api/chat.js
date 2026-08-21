@@ -1,4 +1,4 @@
-import { authorizedFetch }
+import { authorizedFetch } from './auth'
 
 const CHAT_URL = '/chat'
 const CHAT_STREAM_URL = '/chat/stream'

@@ -16,8 +16,15 @@ def test_document_chunk_embedding_matches_configured_dimension() -> None:
     embedding_type = DocumentChunk.__table__.c.embedding.type
 
     assert isinstance(embedding_type, Vector)
-    assert embedding_type.dim == settings.rag_embedding_dimensions == 3_072
+    assert embedding_type.dim == settings.rag_embedding_dimensions == 1_536
     assert DocumentChunk.__table__.c.embedding.nullable is True
+
+
+def test_gemini_retrieval_embedding_configuration() -> None:
+    assert settings.rag_embedding_model == "models/gemini-embedding-001"
+    assert settings.rag_embedding_document_task_type == "RETRIEVAL_DOCUMENT"
+    assert settings.rag_embedding_query_task_type == "RETRIEVAL_QUERY"
+    assert settings.rag_embedding_normalize is True
 
 
 def test_document_chunk_order_is_unique_per_document() -> None:

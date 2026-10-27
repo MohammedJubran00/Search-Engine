@@ -29,11 +29,32 @@ replaceable while matching the project's existing service/repository layering.
   existing ownership-aware retrieval contract.
 - Document deletion cascades to its chunks; user deletion cascades to owned
   documents. Chunk order is unique per document and uses a zero-based index.
-- `gemini-embedding-001` is configured with its default 3,072-dimensional
-  output. Google documents 3,072 as a supported and recommended size, and the
-  full-size output does not require the manual normalization needed when this
-  model is configured for a smaller dimension.
+- `gemini-embedding-001` is configured for 1,536-dimensional output. This is a
+  supported, recommended size that permits direct pgvector `vector` HNSW or
+  IVFFlat indexing while using half the vector storage of 3,072 dimensions.
 - Chunk embeddings are nullable until the future ingestion phase generates
-  them. The schema migration freezes the vector dimension at 3,072; changing
+  them. The schema migration freezes the vector dimension at 1,536; changing
   the configured model or dimension later requires a coordinated migration and
   re-embedding of stored chunks.
+
+## Phase 4 embedding requirements
+
+The future embedding provider must use all of the following settings together:
+
+- `RAG_EMBEDDING_MODEL=models/gemini-embedding-001`
+- `RAG_EMBEDDING_DIMENSIONS=1536` as the API output dimensionality
+- `RAG_EMBEDDING_DOCUMENT_TASK_TYPE=RETRIEVAL_DOCUMENT` for chunks
+- `RAG_EMBEDDING_QUERY_TASK_TYPE=RETRIEVAL_QUERY` for search queries
+- `RAG_EMBEDDING_NORMALIZE=true`
+
+`gemini-embedding-001` does not automatically normalize reduced-dimension
+outputs. Phase 4 must L2-normalize every document and query vector after the
+embedding response and before persistence or similarity search. It must reject
+a zero-norm or incorrectly sized result rather than storing or querying it.
+Document and query vectors must always use the same model, dimension, and
+normalization procedure.
+
+The installed `langchain-google-genai` embedding class accepts task type and
+output dimensionality per operation. A future implementation should pass the
+document and query task settings to their respective operations; it must not
+set one global task type that overrides both paths.

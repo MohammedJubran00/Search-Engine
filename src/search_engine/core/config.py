@@ -43,7 +43,10 @@ class Settings(BaseSettings):
     rag_chunk_size: int = 1_000
     rag_chunk_overlap: int = 200
     rag_embedding_model: str = "models/gemini-embedding-001"
-    rag_embedding_dimensions: int = 3_072
+    rag_embedding_dimensions: int = 1_536
+    rag_embedding_document_task_type: str = "RETRIEVAL_DOCUMENT"
+    rag_embedding_query_task_type: str = "RETRIEVAL_QUERY"
+    rag_embedding_normalize: bool = True
 
     def _postgres_url(self, driver: str) -> str:
         password = quote_plus(self.db_password)

@@ -63,11 +63,20 @@ class TextChunker(Protocol):
 
 
 class EmbeddingProvider(Protocol):
-    """Generate Gemini embeddings for document chunks and retrieval queries."""
+    """Generate normalized, fixed-size document and query embeddings.
 
-    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
+    Future implementations must use the separately configured retrieval task
+    types and L2-normalize every reduced-dimension Gemini embedding before it
+    is persisted or used in a similarity query.
+    """
 
-    async def embed_query(self, text: str) -> list[float]: ...
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        """Return L2-normalized document vectors in the configured dimension."""
+        ...
+
+    async def embed_query(self, text: str) -> list[float]:
+        """Return one L2-normalized query vector in the configured dimension."""
+        ...
 
 
 class VectorStore(Protocol):

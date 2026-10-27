@@ -58,3 +58,21 @@ The installed `langchain-google-genai` embedding class accepts task type and
 output dimensionality per operation. A future implementation should pass the
 document and query task settings to their respective operations; it must not
 set one global task type that overrides both paths.
+
+## Phase 2 upload and parsing semantics
+
+Authenticated uploads are streamed with a hard byte limit into an opaque,
+server-generated file beneath `RAG_STORAGE_DIR`. Client filenames are metadata
+only and are rejected if they contain path components. PDF, DOCX, and UTF-8 TXT
+content is checked by signature/container/decoding and then parsed in a worker
+thread. Uploaded files are private and are not mounted as static assets.
+DOCX validation also limits total expanded archive bytes to
+`RAG_MAX_DOCX_UNCOMPRESSED_BYTES` before parsing.
+
+For Phase 2, `completed` means only that the original file was stored and its
+text was successfully extracted. It does not mean chunked, embedded, or
+indexed. Rejected, empty, corrupt, and scanned/image-only documents leave no
+database row or stored file. `pending`, `processing`, and `failed` remain
+available for later asynchronous ingestion; this synchronous workflow moves a
+new row through pending and processing in its transaction, committing only the
+completed state.

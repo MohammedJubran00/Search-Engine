@@ -1,30 +1,10 @@
 import { authorizedFetch } from './auth'
+import { readErrorDetail } from './errors'
 
 const CHAT_STREAM_URL = '/chat/stream'
 const LATEST_CONVERSATION_URL = '/api/conversations/latest'
 const UNREACHABLE =
   'Could not reach the search engine. Make sure the FastAPI server is running at http://127.0.0.1:8000.'
-
-function readErrorDetail(payload, fallback) {
-  if (!payload || typeof payload !== 'object') return fallback
-
-  if (typeof payload.error === 'string' && payload.error.trim()) {
-    return payload.error.trim()
-  }
-
-  const detail = payload.detail
-  if (typeof detail === 'string' && detail.trim()) return detail
-  if (Array.isArray(detail) && detail.length > 0) {
-    return detail
-      .map((item) => item.msg || item.message || JSON.stringify(item))
-      .join(' ')
-  }
-  if (typeof payload.message === 'string' && payload.message.trim()) {
-    return payload.message
-  }
-
-  return fallback
-}
 
 function jsonHeaders() {
   return {

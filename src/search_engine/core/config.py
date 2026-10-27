@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     rag_storage_dir: Path = _PROJECT_ROOT / "data" / "uploads"
     rag_max_upload_bytes: int = 10 * 1024 * 1024
+    rag_max_docx_uncompressed_bytes: int = 100 * 1024 * 1024
     rag_chunk_size: int = 1_000
     rag_chunk_overlap: int = 200
     rag_embedding_model: str = "models/gemini-embedding-001"

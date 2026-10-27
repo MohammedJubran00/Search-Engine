@@ -34,6 +34,7 @@ from src.search_engine.auth_router import router as auth_router
 from src.search_engine.conversation_router import router as conversation_router
 from src.search_engine.database.database import get_db
 from src.search_engine.deps import get_current_user
+from src.search_engine.document_router import router as document_router
 from src.search_engine.main import app as graph_app  # عشان ما نخلطه مع: app = FastAPI() ( لا نستخدم نفس الاسم)
 from src.search_engine.main import stream_agent
 from src.search_engine.models.user import User
@@ -61,6 +62,7 @@ app.include_router(
     prefix="/api/conversations",
     tags=["conversations"],
 )
+app.include_router(document_router, prefix="/api/documents", tags=["documents"])
 
 
 def error_response(status_code: int, message: str) -> JSONResponse:
@@ -297,4 +299,3 @@ async def chat_stream(
     )
 
 
-    

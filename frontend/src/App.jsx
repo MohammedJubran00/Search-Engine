@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchLatestConversation, streamChatQuery } from './api/chat'
 import ChatWindow from './components/ChatWindow'
+import DocumentPanel from './components/DocumentPanel'
 import Header from './components/Header'
 import SearchInput from './components/SearchInput'
 import './App.css'
@@ -126,6 +127,7 @@ export default function App() {
     <div className="app-shell">
       <Header />
       <main className="app-main">
+        <DocumentPanel />
         <ChatWindow
           messages={messages}
           isLoading={isLoading}

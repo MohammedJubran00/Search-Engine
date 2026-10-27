@@ -13,6 +13,14 @@ from typing import Protocol
 
 
 @dataclass(frozen=True, slots=True)
+class ParsedPage:
+    """Text and citation position extracted from one source page."""
+
+    text: str
+    page_number: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class DocumentRecord:
     """Identity and ownership metadata for one uploaded document."""
 
@@ -28,6 +36,7 @@ class ParsedDocument:
     """Text extracted from a validated upload."""
 
     text: str
+    pages: tuple[ParsedPage, ...] = ()
     metadata: Mapping[str, str | int | float | bool] = field(default_factory=dict)
 
 

@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
     jwt_algorithm: str = "HS256"
+    rag_storage_dir: Path = _PROJECT_ROOT / "data" / "uploads"
+    rag_max_upload_bytes: int = 10 * 1024 * 1024
+    rag_chunk_size: int = 1_000
+    rag_chunk_overlap: int = 200
+    rag_embedding_model: str = "models/gemini-embedding-001"
+    rag_embedding_dimensions: int = 3_072
 
     def _postgres_url(self, driver: str) -> str:
         password = quote_plus(self.db_password)

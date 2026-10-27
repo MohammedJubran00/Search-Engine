@@ -22,6 +22,7 @@ from src.search_engine.database.database import Base
 
 if TYPE_CHECKING:
     from src.search_engine.models.conversation import Conversation
+    from src.search_engine.models.document import Document
 
 
 class User(Base):
@@ -60,6 +61,10 @@ class User(Base):
         onupdate=func.now(),
     )
     conversations: Mapped[list["Conversation"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    documents: Mapped[list["Document"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )

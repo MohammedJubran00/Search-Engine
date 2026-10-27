@@ -10,8 +10,8 @@ Planned flow:
 2. Store it beneath `RAG_STORAGE_DIR` using a generated identifier, never a
    client-supplied path.
 3. Parse text with PyMuPDF, python-docx, or the standard library.
-4. Split text with `langchain-text-splitters` using the configured chunk size
-   and overlap.
+4. Split text with `langchain-text-splitters` using the configured character
+   size and overlap.
 5. Generate vectors with the existing Gemini integration.
 6. Store document/chunk metadata and vectors in PostgreSQL with pgvector.
 7. Require `user_id` in every document and similarity query; optional document
@@ -76,3 +76,31 @@ database row or stored file. `pending`, `processing`, and `failed` remain
 available for later asynchronous ingestion; this synchronous workflow moves a
 new row through pending and processing in its transaction, committing only the
 completed state.
+
+## Phase 3 chunking semantics
+
+`RAG_CHUNK_SIZE` and `RAG_CHUNK_OVERLAP` are Python character counts (Unicode
+code points), not tokens or UTF-8 bytes. The production chunker uses recursive
+structure-aware separators in this order: blank lines, line breaks, English
+and Arabic sentence punctuation, spaces, then individual characters as the
+last-resort safety fallback. This keeps paragraphs, headings, sentences,
+Arabic text, numbers, and technical terms intact whenever the configured size
+allows it without adding a tokenizer dependency.
+
+PDF pages are chunked independently. Blank pages produce no chunks, and every
+nonblank PDF chunk retains its original one-based `page_number`. This avoids
+ambiguous cross-page citations. DOCX and TXT chunks deliberately omit page
+numbers. All chunks use a stable, zero-based document-wide index and record
+the source filename, content type, and page-local character start/end offsets
+in metadata. Chunking does not persist data or change the Phase 2 meaning of
+the document `completed` status.
+
+Inspect a trusted local document without API calls or persistence:
+
+```powershell
+.venv\Scripts\python.exe -m src.search_engine.rag.inspect_chunks path\to\file.pdf
+```
+
+The default output shows lengths, page metadata, quality flags, and short
+previews. Add `--show-text` only when full local document content is safe to
+print. Use `--chunk-size` and `--chunk-overlap` to compare configurations.

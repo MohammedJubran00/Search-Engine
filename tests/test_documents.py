@@ -16,6 +16,7 @@ from starlette.datastructures import Headers
 
 from src.search_engine.core.config import settings
 from src.search_engine.models.document import Document
+from src.search_engine.rag.contracts import ParsedPage
 from src.search_engine.rag.parsers import (
     DOCX_CONTENT_TYPE,
     PDF_CONTENT_TYPE,
@@ -130,6 +131,21 @@ def _docx_bytes(text: str) -> bytes:
     return buffer.getvalue()
 
 
+def _structured_docx_bytes() -> bytes:
+    buffer = BytesIO()
+    document = DocxDocument()
+    document.add_heading("Quarterly Results", level=1)
+    document.add_paragraph("Revenue reached 1,234.50 USD on 2026-10-27.")
+    document.add_paragraph("ملخص النتائج العربية مع المصطلح API-v2.")
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Metric"
+    table.cell(0, 1).text = "Value"
+    table.cell(1, 0).text = "Growth"
+    table.cell(1, 1).text = "12.5%"
+    document.save(buffer)
+    return buffer.getvalue()
+
+
 def _service(tmp_path: Path, *, fail_commit: bool = False):
     session = FakeSession(fail_commit=fail_commit)
     repository = FakeDocumentRepository()
@@ -198,6 +214,46 @@ def test_pdf_parser_preserves_page_numbers_and_blank_pages(tmp_path: Path) -> No
     assert parsed.pages[1].text == ""
     assert "Third page" in parsed.pages[2].text
     assert parsed.metadata["page_count"] == 3
+
+
+def test_docx_parser_preserves_headings_paragraphs_tables_and_values(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "structured.docx"
+    path.write_bytes(_structured_docx_bytes())
+
+    parsed = RagDocumentParser(
+        max_docx_uncompressed_bytes=settings.rag_max_docx_uncompressed_bytes
+    ).parse(path, DOCX_CONTENT_TYPE)
+
+    expected_in_order = (
+        "Quarterly Results",
+        "Revenue reached 1,234.50 USD on 2026-10-27.",
+        "ملخص النتائج العربية مع المصطلح API-v2.",
+        "Metric\tValue",
+        "Growth\t12.5%",
+    )
+    positions = [parsed.text.index(value) for value in expected_in_order]
+    assert positions == sorted(positions)
+    assert parsed.text == "\n".join(expected_in_order)
+    assert parsed.pages == (ParsedPage(text=parsed.text),)
+
+
+def test_txt_parser_preserves_mixed_paragraph_order_and_values(tmp_path: Path) -> None:
+    text = (
+        "English heading\n\n"
+        "The amount is 98,765.43 USD on 2026-10-27.\n\n"
+        "عنوان عربي\n\nالقيمة ٩٨٬٧٦٥٫٤٣ دولار في ٢٠٢٦/١٠/٢٧."
+    )
+    path = tmp_path / "mixed.txt"
+    path.write_bytes(text.encode("utf-8"))
+
+    parsed = RagDocumentParser(
+        max_docx_uncompressed_bytes=settings.rag_max_docx_uncompressed_bytes
+    ).parse(path, TXT_CONTENT_TYPE)
+
+    assert parsed.text == text
+    assert parsed.pages == (ParsedPage(text=text),)
 
 
 def test_docx_expanded_size_limit_is_enforced(tmp_path: Path) -> None:

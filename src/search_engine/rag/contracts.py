@@ -66,7 +66,7 @@ class DocumentParser(Protocol):
 
 
 class TextChunker(Protocol):
-    """Split parsed text using configured size and overlap values."""
+    """Split parsed text using character-based size and overlap values."""
 
     def split(self, document: DocumentRecord, parsed: ParsedDocument) -> list[TextChunk]: ...
 

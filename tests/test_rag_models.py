@@ -29,6 +29,12 @@ def test_gemini_retrieval_embedding_configuration() -> None:
     assert settings.rag_embedding_batch_size == 100
     assert settings.rag_embedding_max_concurrency > 0
     assert settings.rag_embedding_max_retries >= 0
+    assert settings.rag_retrieval_top_k > 0
+    assert settings.rag_retrieval_max_top_k >= settings.rag_retrieval_top_k
+    assert settings.rag_retrieval_default_min_similarity is None
+    assert settings.rag_pdf_boilerplate_min_pages >= 3
+    assert 0.5 < settings.rag_pdf_boilerplate_page_ratio <= 1.0
+    assert 0.0 < settings.rag_pdf_boilerplate_margin_ratio <= 0.2
 
 
 def test_document_chunk_order_is_unique_per_document() -> None:

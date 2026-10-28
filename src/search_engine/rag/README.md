@@ -95,6 +95,21 @@ the source filename, content type, and page-local character start/end offsets
 in metadata. Chunking does not persist data or change the Phase 2 meaning of
 the document `completed` status.
 
+Before chunking, PDF parsing conservatively removes verified running
+boilerplate. Only single-line text blocks inside the configured top or bottom
+page margins are candidates. A candidate must recur on at least
+`RAG_PDF_BOILERPLATE_MIN_PAGES` and the configured majority of document pages.
+Terminal page numbers are generalized only for standalone numbers or familiar
+page/footer delimiters, preventing numbered headings such as `Section 2` from
+being treated as a footer. There is no global minimum chunk-length filter.
+Unique page-edge text, body-position headings, dates, numbers, and short
+meaningful content remain. Parser metadata records removed pattern and line
+counts without recording the removed text.
+
+Changing this preprocessing changes chunk text, indexes, offsets, and
+embeddings. Previously indexed PDFs must be explicitly re-indexed to receive
+the improvement; uploads and existing indexes are never changed automatically.
+
 Inspect a trusted local document without API calls or persistence:
 
 ```powershell
@@ -141,3 +156,67 @@ only identifiers and counts, never source text, vectors, or credentials.
 If a worker crashed after claiming a generation, rerun with
 `--supersede-processing` only after confirming that worker is stale. The new
 generation invalidates the old worker, so it cannot overwrite recovered data.
+
+## Phase 5 retrieval semantics
+
+Semantic retrieval is an internal service and local CLI only. It is not
+connected to FastAPI, chat, LangGraph, Tavily, SSE, or the frontend. The query
+uses the existing `GeminiEmbeddingProvider` with `RETRIEVAL_QUERY`, 1,536
+dimensions, and the same L2 normalization as stored document vectors.
+
+PostgreSQL performs exact pgvector cosine search. Every query joins chunks to
+their document and indexing state, requires the authenticated `user_id`,
+requires `document_index_states.status='completed'`, and excludes null
+embeddings. Optional document filters are ownership-checked before Gemini is
+called. Equal distances are ordered deterministically by document ID, chunk
+index, and chunk ID.
+
+Scores use:
+
+```text
+cosine_similarity = 1 - cosine_distance
+```
+
+Similarity is not a probability and does not prove that an answer exists.
+There is no universal default threshold. A minimum similarity can be supplied
+for an evaluated use case; otherwise results are ranked without filtering.
+Top-K defaults to `RAG_RETRIEVAL_TOP_K` and is bounded by
+`RAG_RETRIEVAL_MAX_TOP_K`.
+
+Inspect real retrieval locally (this can consume Gemini quota):
+
+```powershell
+.venv\Scripts\python.exe -m src.search_engine.rag.inspect_retrieval `
+  --user-id <owner-uuid> `
+  --document-id <document-uuid> `
+  --query "What are the project's main goals?" `
+  --top-k 5
+```
+
+The default prints short previews. Add `--show-text` only for trusted local
+content. Compare labeled configurations with:
+
+```powershell
+.venv\Scripts\python.exe -m src.search_engine.rag.evaluate_retrieval `
+  --dataset path\to\golden.jsonl `
+  --user-id <owner-uuid> `
+  --top-k 3 --top-k 5 `
+  --min-similarity 0.2 --min-similarity 0.4
+```
+
+The golden JSON Lines format requires an ID, question, expected document IDs,
+answerability, expected evidence, and explicit relevant chunk IDs or
+document/page labels. Metrics include Hit@K, Recall@K, Precision@K, MRR, and
+unanswerable-query false positives. These metrics use labels—not similarity as
+a relevance judgment—and retrieval failures are reported separately.
+
+### Exact search versus HNSW
+
+Exact search is the Phase 5 correctness baseline. The inspected development
+dataset has 42 embedded chunks across one document, far below a size where an
+ANN index is justified. At 1,536 dimensions pgvector HNSW is compatible with
+`vector_cosine_ops`, but it increases build time, memory, write cost, and can
+trade recall for latency. Ownership and document filters are also applied
+after approximate candidate selection unless query/index design accounts for
+them. Re-evaluate with measured corpus size, latency, recall, and filtered
+query behavior before proposing a migration such as an HNSW cosine index.

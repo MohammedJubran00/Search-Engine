@@ -53,10 +53,19 @@ class TextChunk:
 
 @dataclass(frozen=True, slots=True)
 class RetrievedChunk:
-    """A chunk returned by similarity search, with distance/score metadata."""
+    """One ranked, source-aware result from user-scoped vector search."""
 
-    chunk: TextChunk
-    score: float
+    chunk_id: uuid.UUID
+    document_id: uuid.UUID
+    filename: str
+    chunk_index: int
+    text: str
+    page_number: int | None
+    char_start: int | None
+    char_end: int | None
+    cosine_distance: float
+    cosine_similarity: float
+    rank: int
 
 
 class DocumentParser(Protocol):
@@ -104,4 +113,5 @@ class VectorStore(Protocol):
         query_embedding: Sequence[float],
         limit: int,
         document_ids: Sequence[uuid.UUID] | None = None,
+        min_similarity: float | None = None,
     ) -> list[RetrievedChunk]: ...

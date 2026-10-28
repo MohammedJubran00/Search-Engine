@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     rag_storage_dir: Path = _PROJECT_ROOT / "data" / "uploads"
     rag_max_upload_bytes: int = 10 * 1024 * 1024
     rag_max_docx_uncompressed_bytes: int = 100 * 1024 * 1024
+    rag_pdf_boilerplate_min_pages: int = 3
+    rag_pdf_boilerplate_page_ratio: float = 0.6
+    rag_pdf_boilerplate_margin_ratio: float = 0.08
+    rag_pdf_boilerplate_max_line_characters: int = 200
     rag_chunk_size: int = 1_000
     rag_chunk_overlap: int = 200
     rag_embedding_model: str = "models/gemini-embedding-001"
@@ -54,6 +58,11 @@ class Settings(BaseSettings):
     rag_embedding_max_concurrency: int = 2
     rag_embedding_max_retries: int = 3
     rag_embedding_retry_base_seconds: float = 1.0
+    rag_retrieval_top_k: int = 5
+    rag_retrieval_max_top_k: int = 50
+    rag_retrieval_max_query_characters: int = 2_000
+    rag_retrieval_max_document_filters: int = 100
+    rag_retrieval_default_min_similarity: float | None = None
 
     def _postgres_url(self, driver: str) -> str:
         password = quote_plus(self.db_password)

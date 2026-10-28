@@ -33,7 +33,13 @@ def main() -> None:
         raise SystemExit(f"File does not exist: {path}")
 
     parser = RagDocumentParser(
-        max_docx_uncompressed_bytes=settings.rag_max_docx_uncompressed_bytes
+        max_docx_uncompressed_bytes=settings.rag_max_docx_uncompressed_bytes,
+        pdf_boilerplate_min_pages=settings.rag_pdf_boilerplate_min_pages,
+        pdf_boilerplate_page_ratio=settings.rag_pdf_boilerplate_page_ratio,
+        pdf_boilerplate_margin_ratio=settings.rag_pdf_boilerplate_margin_ratio,
+        pdf_boilerplate_max_line_characters=(
+            settings.rag_pdf_boilerplate_max_line_characters
+        ),
     )
     parsed = parser.parse(path, content_type)
     document = DocumentRecord(

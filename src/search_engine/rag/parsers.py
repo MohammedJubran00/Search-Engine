@@ -6,6 +6,10 @@ CPU/blocking parser work only and is called through ``asyncio.to_thread`` by
 the document service.
 """
 
+import math
+import re
+from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
@@ -48,8 +52,28 @@ class UnsupportedContentTypeError(DocumentParseError):
 class RagDocumentParser:
     """Validate and extract supported documents without performing OCR."""
 
-    def __init__(self, *, max_docx_uncompressed_bytes: int) -> None:
+    def __init__(
+        self,
+        *,
+        max_docx_uncompressed_bytes: int,
+        pdf_boilerplate_min_pages: int = 3,
+        pdf_boilerplate_page_ratio: float = 0.6,
+        pdf_boilerplate_margin_ratio: float = 0.08,
+        pdf_boilerplate_max_line_characters: int = 200,
+    ) -> None:
+        _validate_pdf_boilerplate_policy(
+            min_pages=pdf_boilerplate_min_pages,
+            page_ratio=pdf_boilerplate_page_ratio,
+            margin_ratio=pdf_boilerplate_margin_ratio,
+            max_line_characters=pdf_boilerplate_max_line_characters,
+        )
         self._max_docx_uncompressed_bytes = max_docx_uncompressed_bytes
+        self._pdf_boilerplate_min_pages = pdf_boilerplate_min_pages
+        self._pdf_boilerplate_page_ratio = pdf_boilerplate_page_ratio
+        self._pdf_boilerplate_margin_ratio = pdf_boilerplate_margin_ratio
+        self._pdf_boilerplate_max_line_characters = (
+            pdf_boilerplate_max_line_characters
+        )
 
     def parse(self, path: Path, content_type: str) -> ParsedDocument:
         if content_type == PDF_CONTENT_TYPE:
@@ -70,15 +94,24 @@ class RagDocumentParser:
                 if document.needs_pass:
                     raise CorruptDocumentError("Password-protected PDFs are unsupported.")
 
-                pages = tuple(
-                    ParsedPage(
-                        text=page.get_text("text", sort=True),
+                extracted_pages = tuple(
+                    _extract_pdf_page(
+                        page,
                         page_number=index + 1,
+                        margin_ratio=self._pdf_boilerplate_margin_ratio,
+                        max_line_characters=self._pdf_boilerplate_max_line_characters,
                     )
                     for index, page in enumerate(document)
                 )
+                pages, removed_line_count, pattern_count = _remove_pdf_boilerplate(
+                    extracted_pages,
+                    min_pages=self._pdf_boilerplate_min_pages,
+                    page_ratio=self._pdf_boilerplate_page_ratio,
+                )
                 metadata = _clean_metadata(document.metadata)
                 metadata["page_count"] = document.page_count
+                metadata["removed_boilerplate_lines"] = removed_line_count
+                metadata["removed_boilerplate_patterns"] = pattern_count
         except DocumentParseError:
             raise
         except (pymupdf.FileDataError, RuntimeError, ValueError) as exc:
@@ -135,6 +168,120 @@ class RagDocumentParser:
             pages=(ParsedPage(text=text),),
             metadata={"encoding": "utf-8"},
         )
+
+
+@dataclass(frozen=True, slots=True)
+class _ExtractedPdfPage:
+    text: str
+    page_number: int
+    edge_fingerprints: frozenset[str]
+
+
+_TERMINAL_PAGE_NUMBER = re.compile(r"(?<!\d)(\d+)\s*$")
+_PAGE_NUMBER_DELIMITER = re.compile(r"(?:[•·|]|[-–—]|\bpage|\bp\.)\s*$")
+
+
+def _extract_pdf_page(
+    page: pymupdf.Page,
+    *,
+    page_number: int,
+    margin_ratio: float,
+    max_line_characters: int,
+) -> _ExtractedPdfPage:
+    edge_fingerprints: set[str] = set()
+    page_height = float(page.rect.height)
+    for block in page.get_text("blocks", sort=True):
+        normalized_lines = [
+            _normalize_pdf_line(line)
+            for line in str(block[4]).splitlines()
+            if line.strip()
+        ]
+        if len(normalized_lines) != 1:
+            continue
+        line = normalized_lines[0]
+        if not line or len(line) > max_line_characters:
+            continue
+        top_edge = float(block[3]) <= page_height * margin_ratio
+        bottom_edge = float(block[1]) >= page_height * (1.0 - margin_ratio)
+        if top_edge or bottom_edge:
+            edge_fingerprints.add(_pdf_line_fingerprint(line, page_number))
+    return _ExtractedPdfPage(
+        text=page.get_text("text", sort=True),
+        page_number=page_number,
+        edge_fingerprints=frozenset(edge_fingerprints),
+    )
+
+
+def _remove_pdf_boilerplate(
+    pages: tuple[_ExtractedPdfPage, ...],
+    *,
+    min_pages: int,
+    page_ratio: float,
+) -> tuple[tuple[ParsedPage, ...], int, int]:
+    pattern_pages: dict[str, set[int]] = defaultdict(set)
+    for page in pages:
+        for fingerprint in page.edge_fingerprints:
+            pattern_pages[fingerprint].add(page.page_number)
+    required_pages = max(min_pages, math.ceil(len(pages) * page_ratio))
+    verified = {
+        fingerprint
+        for fingerprint, page_numbers in pattern_pages.items()
+        if len(page_numbers) >= required_pages
+    }
+
+    cleaned_pages: list[ParsedPage] = []
+    removed_line_count = 0
+    for page in pages:
+        kept_lines: list[str] = []
+        for line in page.text.splitlines():
+            normalized = _normalize_pdf_line(line)
+            fingerprint = _pdf_line_fingerprint(normalized, page.page_number)
+            if (
+                normalized
+                and fingerprint in verified
+                and fingerprint in page.edge_fingerprints
+            ):
+                removed_line_count += 1
+                continue
+            kept_lines.append(line)
+        text = "\n".join(kept_lines)
+        if page.text.endswith("\n") and text:
+            text += "\n"
+        cleaned_pages.append(ParsedPage(text=text, page_number=page.page_number))
+    return tuple(cleaned_pages), removed_line_count, len(verified)
+
+
+def _normalize_pdf_line(line: str) -> str:
+    return " ".join(line.split())
+
+
+def _pdf_line_fingerprint(line: str, page_number: int) -> str:
+    normalized = _normalize_pdf_line(line).casefold()
+    match = _TERMINAL_PAGE_NUMBER.search(normalized)
+    if match is not None and int(match.group(1)) == page_number:
+        prefix = normalized[: match.start()].rstrip()
+        if not prefix or _PAGE_NUMBER_DELIMITER.search(prefix):
+            normalized = f"{prefix} <page>".strip()
+    return normalized
+
+
+def _validate_pdf_boilerplate_policy(
+    *,
+    min_pages: int,
+    page_ratio: float,
+    margin_ratio: float,
+    max_line_characters: int,
+) -> None:
+    if min_pages < 3:
+        raise ValueError("PDF boilerplate detection requires at least three pages.")
+    if not 0.5 < page_ratio <= 1.0:
+        raise ValueError("PDF boilerplate page ratio must be above 0.5 and at most 1.")
+    if not 0.0 < margin_ratio <= 0.2:
+        raise ValueError("PDF boilerplate margin ratio must be above 0 and at most 0.2.")
+    if max_line_characters <= 0:
+        raise ValueError("PDF boilerplate maximum line length must be positive.")
+
+
 def _validate_docx_container(path: Path, max_uncompressed_bytes: int) -> None:
     try:
         with ZipFile(path) as archive:

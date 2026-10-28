@@ -82,7 +82,13 @@ class DocumentService:
         self._documents = repository or DocumentRepository(session)
         self._storage = storage or DocumentStorage(settings.rag_storage_dir)
         self._parser = parser or RagDocumentParser(
-            max_docx_uncompressed_bytes=settings.rag_max_docx_uncompressed_bytes
+            max_docx_uncompressed_bytes=settings.rag_max_docx_uncompressed_bytes,
+            pdf_boilerplate_min_pages=settings.rag_pdf_boilerplate_min_pages,
+            pdf_boilerplate_page_ratio=settings.rag_pdf_boilerplate_page_ratio,
+            pdf_boilerplate_margin_ratio=settings.rag_pdf_boilerplate_margin_ratio,
+            pdf_boilerplate_max_line_characters=(
+                settings.rag_pdf_boilerplate_max_line_characters
+            ),
         )
 
     async def upload(self, *, user_id: uuid.UUID, upload: UploadFile) -> UploadResult:

@@ -220,3 +220,77 @@ trade recall for latency. Ownership and document filters are also applied
 after approximate candidate selection unless query/index design accounts for
 them. Re-evaluate with measured corpus size, latency, recall, and filtered
 query behavior before proposing a migration such as an HNSW cosine index.
+
+## Phase 6 grounded answer generation
+
+`RagAnswerService` is a backend-only orchestration service. It accepts a
+trusted user UUID, calls `SemanticRetrievalService` exactly once, ends the
+read-only database transaction, builds bounded evidence, and then calls a
+dedicated deterministic Gemini chat client. It is not connected to FastAPI,
+the existing chat routes, LangGraph, Tavily, SSE, or the frontend.
+
+The context builder removes empty and normalized-identical chunks, keeps rank
+order, assigns stable `S1`, `S2`, ... labels, and uses fair per-source token
+shares so one oversized chunk does not crowd out all other evidence. It cuts
+at sentence or word boundaries and keeps document ID, chunk ID, filename,
+page, rank, similarity, and a bounded evidence excerpt. The effective context
+limit is the lowest of `RAG_ANSWER_MAX_CONTEXT_TOKENS` and the remaining
+`RAG_ANSWER_MAX_INPUT_TOKENS` after reserving the counted system prompt,
+counted question, configured output allowance, and safety margin.
+
+Token counts use the configured Gemini model's compatible `count_tokens`
+operation. Real use can therefore make quota-bearing token-count requests in
+addition to one query-embedding request and one answer-generation request.
+Tests inject a fake counter and never call Gemini.
+
+Generation uses a system message separate from the user question and source
+blocks. The prompt tells the model to treat source text as untrusted data,
+ignore embedded instructions, use no outside knowledge or web search, and
+abstain when evidence is insufficient. This separation reduces prompt-
+injection risk but cannot guarantee that a generative model will never be
+misled. The service also validates the JSON response, rejects unknown source
+labels, requires a real citation for an answered result, and forbids citations
+on abstentions. A citation is a verification pointer to retrieved evidence,
+not automatic proof that every generated claim is entailed.
+
+The result contains `answered` or `insufficient_evidence`, answer text, mapped
+citations, eligible source references, retrieval/context counts, safe numeric
+usage metadata when Gemini supplies it, and generation timing. Retrieval and
+generation failures remain exceptions of their respective families; they are
+not converted into fabricated answers. No universal similarity threshold is
+treated as proof of answerability.
+
+Example result shape:
+
+```json
+{
+  "status": "answered",
+  "answer": "The project aims to improve service speed [S1].",
+  "citations": [
+    {
+      "label": "S1",
+      "document_id": "...",
+      "chunk_id": "...",
+      "filename": "project.pdf",
+      "page_number": 2,
+      "evidence_excerpt": "The project aims to improve service speed."
+    }
+  ]
+}
+```
+
+Run an explicitly authorized real-document smoke test only from a trusted
+local shell (this can consume Gemini quota or incur charges):
+
+```powershell
+.venv\Scripts\python.exe -m src.search_engine.rag.ask_document `
+  --user-id <owner-uuid> `
+  --document-id <document-uuid> `
+  --question "What are the main objectives of this project?"
+```
+
+`tests/fixtures/rag_answer_golden.jsonl` contains small English, Arabic,
+abstention, conflict, and prompt-injection cases for human review. They define
+expected behavior but do not claim benchmark scores. Remaining limitations
+include model fallibility, retrieval misses, imperfect relevance calibration,
+and excerpts that require a human to verify in the original document.

@@ -24,6 +24,11 @@ from src.search_engine.rag.embeddings import (
     GeminiEmbeddingProvider,
     InvalidEmbeddingError,
 )
+from src.search_engine.rag.answering import (
+    AnswerStatus,
+    RagAnswerResult,
+    SourceReference,
+)
 
 __all__ = [
     "DocumentParser",
@@ -41,4 +46,7 @@ __all__ = [
     "TextChunk",
     "TextChunker",
     "VectorStore",
+    "AnswerStatus",
+    "RagAnswerResult",
+    "SourceReference",
 ]

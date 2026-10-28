@@ -63,6 +63,16 @@ class Settings(BaseSettings):
     rag_retrieval_max_query_characters: int = 2_000
     rag_retrieval_max_document_filters: int = 100
     rag_retrieval_default_min_similarity: float | None = None
+    rag_answer_model: str = "gemini-3.5-flash-lite"
+    rag_answer_temperature: float = 0.0
+    rag_answer_timeout_seconds: float = 45.0
+    rag_answer_max_retries: int = 2
+    rag_answer_max_output_tokens: int = 1_024
+    rag_answer_max_input_tokens: int = 8_192
+    rag_answer_max_context_tokens: int = 6_000
+    rag_answer_token_margin: int = 256
+    rag_answer_max_sources: int = 8
+    rag_answer_evidence_excerpt_characters: int = 320
 
     def _postgres_url(self, driver: str) -> str:
         password = quote_plus(self.db_password)

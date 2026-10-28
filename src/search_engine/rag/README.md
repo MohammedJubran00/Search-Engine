@@ -104,3 +104,40 @@ Inspect a trusted local document without API calls or persistence:
 The default output shows lengths, page metadata, quality flags, and short
 previews. Add `--show-text` only when full local document content is safe to
 print. Use `--chunk-size` and `--chunk-overlap` to compare configurations.
+
+## Phase 4 indexing semantics
+
+Upload parsing and vector indexing have independent lifecycle state. The
+existing `documents.processing_status=completed` still means that secure
+storage and text extraction succeeded. `document_index_states.status` tracks
+only vector indexing with `not_indexed`, `processing`, `completed`, and
+`failed` states. A monotonically increasing generation prevents two workers
+from finalizing the same document concurrently.
+
+Indexing first commits a short ownership-scoped generation claim. Parsing,
+chunking, and Gemini calls then run without an open database transaction. The
+final transaction validates every vector, deletes the prior chunk set, inserts
+the complete replacement, and marks that generation completed. A failure
+rolls back that transaction, records a safe failure status, and leaves a prior
+valid index intact. Uploads do not trigger this workflow automatically.
+
+Gemini document requests use `RETRIEVAL_DOCUMENT`; query support uses
+`RETRIEVAL_QUERY` but is not connected to retrieval. Reduced 1,536-dimensional
+vectors are validated for count, finite values, and nonzero norm, then L2
+normalized. Requests use configurable batches up to Gemini's 100-text limit,
+bounded concurrency, exponential retry for transient capacity/rate errors,
+and per-call duplicate text elimination.
+
+Migration `f7a9c2d4e6b8` must be reviewed and applied manually before indexing.
+After that, explicitly index an existing document from a trusted local shell:
+
+```powershell
+.venv\Scripts\python.exe -m src.search_engine.rag.index_document `
+  <document-uuid> <owner-user-uuid>
+```
+
+This command makes real Gemini requests and consumes project quota. It prints
+only identifiers and counts, never source text, vectors, or credentials.
+If a worker crashed after claiming a generation, rerun with
+`--supersede-processing` only after confirming that worker is stale. The new
+generation invalidates the old worker, so it cannot overwrite recovered data.

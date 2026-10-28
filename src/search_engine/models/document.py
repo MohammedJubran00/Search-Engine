@@ -84,4 +84,5 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
         order_by="DocumentChunk.chunk_index",
+        passive_deletes=True,
     )

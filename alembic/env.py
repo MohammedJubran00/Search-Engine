@@ -19,6 +19,7 @@ from src.search_engine.database.database import Base
 from src.search_engine.models.conversation import Conversation  # noqa: F401
 from src.search_engine.models.document import Document  # noqa: F401
 from src.search_engine.models.document_chunk import DocumentChunk  # noqa: F401
+from src.search_engine.models.document_index_state import DocumentIndexState  # noqa: F401
 from src.search_engine.models.message import Message  # noqa: F401
 from src.search_engine.models.user import User  # noqa: F401
 

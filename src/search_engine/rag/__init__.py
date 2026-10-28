@@ -18,12 +18,22 @@ from src.search_engine.rag.contracts import (
     TextChunker,
     VectorStore,
 )
+from src.search_engine.rag.embeddings import (
+    EmbeddingProviderError,
+    EmbeddingRateLimitError,
+    GeminiEmbeddingProvider,
+    InvalidEmbeddingError,
+)
 
 __all__ = [
     "DocumentParser",
     "DocumentRecord",
     "EmbeddingProvider",
+    "EmbeddingProviderError",
+    "EmbeddingRateLimitError",
+    "GeminiEmbeddingProvider",
     "InvalidChunkConfigurationError",
+    "InvalidEmbeddingError",
     "ParsedDocument",
     "ParsedPage",
     "RagTextChunker",

@@ -15,6 +15,7 @@ Does not talk to FastAPI routes or the LangGraph agent.
 from pathlib import Path
 from urllib.parse import quote_plus
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
     db_name: str
     db_user: str
     db_password: str
+    gemini_api_key: SecretStr
     jwt_secret_key: str
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
@@ -48,6 +50,10 @@ class Settings(BaseSettings):
     rag_embedding_document_task_type: str = "RETRIEVAL_DOCUMENT"
     rag_embedding_query_task_type: str = "RETRIEVAL_QUERY"
     rag_embedding_normalize: bool = True
+    rag_embedding_batch_size: int = 100
+    rag_embedding_max_concurrency: int = 2
+    rag_embedding_max_retries: int = 3
+    rag_embedding_retry_base_seconds: float = 1.0
 
     def _postgres_url(self, driver: str) -> str:
         password = quote_plus(self.db_password)

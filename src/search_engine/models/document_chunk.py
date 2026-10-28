@@ -44,6 +44,11 @@ class DocumentChunk(Base):
             "page_number IS NULL OR page_number >= 1",
             name="ck_document_chunks_page_number_positive",
         ),
+        CheckConstraint(
+            "(char_start IS NULL AND char_end IS NULL) OR "
+            "(char_start >= 0 AND char_end >= char_start)",
+            name="ck_document_chunks_character_range",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -59,6 +64,8 @@ class DocumentChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    char_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    char_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(settings.rag_embedding_dimensions),
         nullable=True,

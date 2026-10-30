@@ -42,6 +42,7 @@ class PersistedChatMessage:
     citations: tuple[dict[str, Any], ...] = ()
     web_citations: tuple[dict[str, Any], ...] = ()
     research_plan: tuple[str, ...] = ()
+    research_summary: dict[str, Any] | None = None
     document_ids: tuple[uuid.UUID, ...] = ()
     attachments: tuple[dict[str, Any], ...] = ()
 
@@ -115,6 +116,7 @@ class ChatService:
         citations: Sequence[Mapping[str, Any]] = (),
         web_citations: Sequence[Mapping[str, Any]] = (),
         research_plan: Sequence[str] = (),
+        research_summary: Mapping[str, Any] | None = None,
     ) -> None:
         """Store the assistant answer only if the conversation still belongs to the user."""
         conversation = await self._conversations.get_by_id_for_user(
@@ -133,6 +135,7 @@ class ChatService:
                 citations=citations,
                 web_citations=web_citations,
                 research_plan=research_plan,
+                research_summary=research_summary,
             ),
         )
         await self._conversations.mark_updated(conversation)
@@ -197,6 +200,7 @@ def _encode_message(
     citations: Sequence[Mapping[str, Any]] = (),
     web_citations: Sequence[Mapping[str, Any]] = (),
     research_plan: Sequence[str] = (),
+    research_summary: Mapping[str, Any] | None = None,
     document_ids: Sequence[uuid.UUID] = (),
     attachments: Sequence[Mapping[str, Any]] = (),
 ) -> str:
@@ -209,6 +213,7 @@ def _encode_message(
         "citations": [dict(item) for item in citations],
         "web_citations": [dict(item) for item in web_citations],
         "research_plan": list(research_plan),
+        "research_summary": dict(research_summary) if research_summary else None,
         "document_ids": [str(item) for item in document_ids],
         "attachments": [dict(item) for item in attachments],
     }
@@ -235,6 +240,7 @@ def _decode_message(message: Message) -> PersistedChatMessage:
         citations = payload.get("citations", [])
         web_citations = payload.get("web_citations", [])
         research_plan = payload.get("research_plan", [])
+        research_summary = payload.get("research_summary")
         document_ids = payload.get("document_ids", [])
         attachments = payload.get("attachments", [])
         if not isinstance(content, str) or mode not in _CHAT_MODES:
@@ -257,6 +263,8 @@ def _decode_message(message: Message) -> PersistedChatMessage:
             isinstance(item, str) for item in research_plan
         ):
             raise ValueError
+        if research_summary is not None and not isinstance(research_summary, dict):
+            raise ValueError
         parsed_document_ids = tuple(uuid.UUID(item) for item in document_ids)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         # A corrupt envelope is never interpreted as trusted attribution.
@@ -274,6 +282,7 @@ def _decode_message(message: Message) -> PersistedChatMessage:
         citations=tuple(citations),
         web_citations=tuple(web_citations),
         research_plan=tuple(research_plan),
+        research_summary=research_summary,
         document_ids=parsed_document_ids,
         attachments=tuple(attachments),
     )

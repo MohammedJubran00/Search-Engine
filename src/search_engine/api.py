@@ -32,6 +32,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.search_engine.auth_router import router as auth_router
 from src.search_engine.conversation_router import router as conversation_router
+from src.search_engine.core.config import settings
 from src.search_engine.database.database import get_db
 from src.search_engine.deps import get_current_user
 from src.search_engine.document_router import router as document_router
@@ -154,6 +155,7 @@ _DOCUMENT_UNAVAILABLE = "One or more selected documents are unavailable."
 _DOCUMENT_NOT_INDEXED = "One or more selected documents are not indexed and available."
 _RETRIEVAL_FAILED = "Document retrieval is temporarily unavailable. Please try again."
 _GENERATION_FAILED = "The document answer could not be generated. Please try again."
+_RESEARCH_TIMEOUT = "Deep Research reached its execution time limit."
 
 
 def graph_thread_id(conversation_id: uuid.UUID) -> str:
@@ -332,7 +334,7 @@ async def chat(
     thread_id = graph_thread_id(conversation.id)
 
     try:
-        result = await asyncio.to_thread(
+        invocation = asyncio.to_thread(
             graph_app.invoke,
             {
                 "session_id": thread_id,
@@ -341,6 +343,16 @@ async def chat(
                 "research_mode": request.research_mode,
             },
         )
+        result = (
+            await asyncio.wait_for(
+                invocation,
+                timeout=settings.research_max_execution_seconds,
+            )
+            if request.research_mode == "deep"
+            else await invocation
+        )
+    except TimeoutError:
+        return error_response(504, _RESEARCH_TIMEOUT)
     except Exception:
         logger.exception("LangGraph invoke failed for conversation_id=%s", conversation.id)
         return error_response(
@@ -374,6 +386,11 @@ async def chat(
         for item in (result.get("research_plan", []) if isinstance(result, dict) else [])
         if isinstance(item, str)
     ]
+    research_summary = (
+        result.get("research_summary")
+        if isinstance(result, dict) and isinstance(result.get("research_summary"), dict)
+        else None
+    )
     try:
         await service.add_assistant_message(
             user_id=user.id,
@@ -382,6 +399,7 @@ async def chat(
             mode="general",
             web_citations=web_citations,
             research_plan=research_plan,
+            research_summary=research_summary,
         )
     except ConversationNotFoundError:
         return error_response(404, _CONVERSATION_NOT_FOUND)
@@ -391,6 +409,7 @@ async def chat(
         conversation_id=conversation.id,
         web_citations=web_citations,
         research_plan=research_plan,
+        research_summary=research_summary,
     )
 
 
@@ -511,9 +530,25 @@ async def chat_stream(
             answer = ""
             web_citations: list[dict] = []
             research_plan: list[str] = []
+            research_summary: dict | None = None
+            research_deadline = (
+                asyncio.get_running_loop().time() + settings.research_max_execution_seconds
+            )
 
             while True:
-                delta = await asyncio.to_thread(next, iterator, _STREAM_END)
+                next_item = asyncio.to_thread(next, iterator, _STREAM_END)
+                if request.research_mode == "deep":
+                    remaining = research_deadline - asyncio.get_running_loop().time()
+                    if remaining <= 0:
+                        yield sse_event({"error": _RESEARCH_TIMEOUT})
+                        return
+                    try:
+                        delta = await asyncio.wait_for(next_item, timeout=remaining)
+                    except TimeoutError:
+                        yield sse_event({"error": _RESEARCH_TIMEOUT})
+                        return
+                else:
+                    delta = await next_item
                 if delta is _STREAM_END:
                     break
                 if isinstance(delta, AgentStreamMetadata):
@@ -521,6 +556,7 @@ async def chat_stream(
                         web_citation_payload(item) for item in delta.web_sources
                     ]
                     research_plan = list(delta.research_plan)
+                    research_summary = delta.research_summary
                     continue
                 if not delta:
                     continue
@@ -544,6 +580,7 @@ async def chat_stream(
                     mode="general",
                     web_citations=web_citations,
                     research_plan=research_plan,
+                    research_summary=research_summary,
                 )
             except ConversationNotFoundError:
                 yield sse_event({"error": _CONVERSATION_NOT_FOUND})
@@ -555,6 +592,7 @@ async def chat_stream(
                         "mode": "general",
                         "web_citations": web_citations,
                         "research_plan": research_plan,
+                        "research_summary": research_summary,
                     }
                 )
             yield sse_event({"done": True, "conversation_id": str(conversation_id)})

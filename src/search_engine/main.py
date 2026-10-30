@@ -1,7 +1,9 @@
 import logging
 import os
 import json
-from dataclasses import dataclass
+import time
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from typing import TypedDict
@@ -32,23 +34,87 @@ tavily = TavilySearch(max_results=5)
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash-lite",
-    temperature=0
+    temperature=0,
+    request_timeout=settings.research_max_execution_seconds,
 )
+
+
+@dataclass(slots=True)
+class ResearchBudget:
+    """Mutable request-local guard shared by the agent and web-search tool."""
+
+    max_searches: int
+    deadline: float
+    search_count: int = 0
+    failure_count: int = 0
+    stop_reason: str = "sufficient_evidence"
+    cache: dict[str, str] = field(default_factory=dict)
+
+
+_ACTIVE_RESEARCH_BUDGET: ContextVar[ResearchBudget | None] = ContextVar(
+    "active_research_budget",
+    default=None,
+)
+
+
+def new_research_budget(research_mode: str) -> ResearchBudget:
+    maximum = (
+        settings.research_deep_max_searches
+        if research_mode == "deep"
+        else settings.research_standard_max_searches
+    )
+    return ResearchBudget(
+        max_searches=maximum,
+        deadline=time.monotonic() + settings.research_max_execution_seconds,
+    )
+
+
+def research_summary(budget: ResearchBudget) -> dict[str, int | str]:
+    reason = budget.stop_reason
+    if reason == "sufficient_evidence" and budget.search_count >= budget.max_searches:
+        reason = "search_budget_reached"
+    return {
+        "search_count": budget.search_count,
+        "search_failures": budget.failure_count,
+        "termination_reason": reason,
+    }
 
 @tool(description="Search the web using Tavily")
 def web_search(query:str):
     # Tavily / network failures must not crash LangGraph. Return a string
     # the agent can read so it can still produce a response.
+    budget = _ACTIVE_RESEARCH_BUDGET.get()
+    if budget is None:
+        budget = new_research_budget("standard")
+    normalized_query = " ".join(query.split()).casefold()
+    if not normalized_query:
+        return "Search was skipped because the query was empty."
+    if normalized_query in budget.cache:
+        return budget.cache[normalized_query]
+    if time.monotonic() >= budget.deadline:
+        budget.stop_reason = "time_budget_exhausted"
+        return "Research stopped because the execution time budget was reached."
+    if budget.search_count >= budget.max_searches:
+        budget.stop_reason = "search_budget_exhausted"
+        return "Research stopped because the search-call budget was reached."
+
+    budget.search_count += 1
     try:
-        result=tavily.invoke(query)
+        result = tavily.invoke(query)
         results = normalize_web_results(result.get("results", []))
         if not results:
-            return "No search results were found for this query."
-        return json.dumps(
+            output = "No search results were found for this query."
+            budget.cache[normalized_query] = output
+            return output
+        output = json.dumps(
             {"type": "web_search_results", "results": results},
             ensure_ascii=False,
         )
+        budget.cache[normalized_query] = output
+        return output
     except Exception:
+        budget.failure_count += 1
+        budget.stop_reason = "partial_search_failure"
         logger.exception("Tavily web_search failed")
         return "Web search is currently unavailable. Tell the user the search failed."
 
@@ -131,6 +197,7 @@ def extract_web_sources(messages) -> list[dict[str, str | None]]:
 class AgentStreamMetadata:
     web_sources: tuple[dict[str, str | None], ...]
     research_plan: tuple[str, ...] = ()
+    research_summary: dict[str, int | str] | None = None
 
 
 class PlannerOutput(BaseModel):
@@ -151,6 +218,7 @@ class ResearchState(TypedDict, total=False):
     planning_failed: bool
     answer: object
     web_sources: list[dict[str, str | None]]
+    research_summary: dict[str, int | str]
 
 
 planner_model = llm.with_structured_output(PlannerOutput)
@@ -254,6 +322,8 @@ def agent_node(state): #for chat history and session id
     query = str(state.get("query", ""))
     agent_query = _planned_query(query, state.get("research_plan", []))
     provided_history = state.get("history")
+    research_mode = state.get("research_mode", "standard")
+    budget = new_research_budget(research_mode)
     chat_history = list(
         provided_history if provided_history is not None else sessions.get(session_id, [])
     )
@@ -265,11 +335,16 @@ def agent_node(state): #for chat history and session id
         )
         # Protect the model call: Gemini errors, tool crashes, or an empty
         # agent payload should be logged and re-raised for the API layer.
-        response = agent.invoke(
-            {
-                "messages": chat_history
-            }
-        )
+        token = _ACTIVE_RESEARCH_BUDGET.set(budget)
+        try:
+            response = agent.invoke(
+                {"messages": chat_history},
+                config={
+                    "recursion_limit": max(6, settings.research_max_iterations * 3),
+                },
+            )
+        finally:
+            _ACTIVE_RESEARCH_BUDGET.reset(token)
         if not response or not response.get("messages"):
             raise RuntimeError("The agent returned no messages.")
 
@@ -279,6 +354,7 @@ def agent_node(state): #for chat history and session id
             sessions[session_id] = chat_history
         state["answer"] = answer
         state["web_sources"] = extract_web_sources(response["messages"])
+        state["research_summary"] = research_summary(budget)
         return state
     except Exception:
         logger.exception(
@@ -326,12 +402,22 @@ def stream_agent(
     chat_history.append(("human", _planned_query(query, plan)))
     full_answer = []
     web_sources: list[dict[str, str | None]] = []
+    budget = new_research_budget(research_mode)
 
     try:
-        for item in agent.stream(
+        agent_iterator = agent.stream(
             {"messages": chat_history},
             stream_mode="messages",
-        ):
+            config={"recursion_limit": max(6, settings.research_max_iterations * 3)},
+        )
+        while True:
+            token = _ACTIVE_RESEARCH_BUDGET.set(budget)
+            try:
+                item = next(agent_iterator)
+            except StopIteration:
+                break
+            finally:
+                _ACTIVE_RESEARCH_BUDGET.reset(token)
             message = item[0] if isinstance(item, tuple) else item
             if isinstance(message, ToolMessage):
                 web_sources.extend(extract_web_sources([message]))
@@ -353,9 +439,13 @@ def stream_agent(
         chat_history.append(("assistant", answer))
         if history is None:
             sessions[session_id] = chat_history
-        if web_sources or plan:
+        if web_sources or plan or budget.search_count:
             deduplicated = {item["url"]: item for item in web_sources if item.get("url")}
-            yield AgentStreamMetadata(tuple(deduplicated.values()), tuple(plan))
+            yield AgentStreamMetadata(
+                tuple(deduplicated.values()),
+                tuple(plan),
+                research_summary(budget),
+            )
     except Exception:
         logger.exception(
             "LangGraph stream_agent failed for session_id=%r",

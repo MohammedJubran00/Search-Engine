@@ -187,6 +187,13 @@
 .message__research-plan summary { color: var(--accent); cursor: pointer; }
 .message__research-plan ol { margin: 7px 0 0; padding-left: 20px; }
 
+.message__research-summary {
+  margin: 8px 0 0;
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  text-transform: capitalize;
+}
+
 .message__markdown {
   font-family: var(--font-prose);
   font-size: 1.02rem;

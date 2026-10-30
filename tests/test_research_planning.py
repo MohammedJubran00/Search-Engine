@@ -1,10 +1,19 @@
 """Bounded, opt-in LangGraph research planning tests with fake providers."""
 
 from unittest.mock import patch
+import time
 
 from langchain_core.messages import AIMessage
 
-from src.search_engine.main import PlannerOutput, _clean_research_plan, app
+from src.search_engine.main import (
+    PlannerOutput,
+    ResearchBudget,
+    _ACTIVE_RESEARCH_BUDGET,
+    _clean_research_plan,
+    app,
+    research_summary,
+    web_search,
+)
 
 
 def test_plan_cleanup_deduplicates_and_enforces_bound() -> None:
@@ -54,6 +63,7 @@ def test_deep_research_uses_typed_bounded_plan(mock_planner, mock_agent) -> None
     ]
     sent_messages = mock_agent.call_args.args[0]["messages"]
     assert "Deep Research plan" in sent_messages[-2][1]
+    assert mock_agent.call_args.kwargs["config"]["recursion_limit"] > 0
 
 
 @patch("src.search_engine.main.agent.invoke")
@@ -72,3 +82,45 @@ def test_planner_failure_degrades_to_original_question(mock_planner, mock_agent)
 
     assert result["planning_failed"] is True
     assert result["research_plan"] == ["Complex question"]
+
+
+@patch("src.search_engine.main.tavily")
+def test_search_budget_deduplicates_queries_and_stops_runaway_calls(mock_search) -> None:
+    mock_search.invoke.return_value = {
+        "results": [
+            {"title": "Source", "url": "https://example.com", "content": "Evidence"}
+        ]
+    }
+    budget = ResearchBudget(max_searches=2, deadline=time.monotonic() + 60)
+    token = _ACTIVE_RESEARCH_BUDGET.set(budget)
+    try:
+        first = web_search.invoke("AWS pricing")
+        duplicate = web_search.invoke("  aws   pricing ")
+        web_search.invoke("Azure pricing")
+        stopped = web_search.invoke("Third distinct search")
+    finally:
+        _ACTIVE_RESEARCH_BUDGET.reset(token)
+
+    assert first == duplicate
+    assert mock_search.invoke.call_count == 2
+    assert "budget" in stopped
+    assert research_summary(budget) == {
+        "search_count": 2,
+        "search_failures": 0,
+        "termination_reason": "search_budget_exhausted",
+    }
+
+
+@patch("src.search_engine.main.tavily")
+def test_partial_search_failure_is_safe_and_counted(mock_search) -> None:
+    mock_search.invoke.side_effect = RuntimeError("provider")
+    budget = ResearchBudget(max_searches=2, deadline=time.monotonic() + 60)
+    token = _ACTIVE_RESEARCH_BUDGET.set(budget)
+    try:
+        result = web_search.invoke("query")
+    finally:
+        _ACTIVE_RESEARCH_BUDGET.reset(token)
+
+    assert "unavailable" in result
+    assert budget.failure_count == 1
+    assert research_summary(budget)["termination_reason"] == "partial_search_failure"

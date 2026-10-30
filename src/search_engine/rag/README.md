@@ -426,3 +426,19 @@ question, and passes the visible plan to the search-capable agent for one
 synthesis. Planner failure degrades to the original question instead of
 breaking the chat. The plan is persisted with the assistant turn and restored
 after reload. Document Chat never enters this graph.
+
+## Bounded multi-step research
+
+The General Chat ReAct graph may evaluate evidence and search again, but every
+request now receives an isolated wall-clock deadline, graph-recursion limit,
+and search-call budget. Standard and Deep Research limits are configured
+separately. Normalized duplicate queries reuse the request-local result instead
+of calling Tavily again; source URLs remain deduplicated. Tool failure is
+reported as partial evidence so the agent can synthesize what remains or
+abstain. Exhausted search/time budgets return an explicit stop reason rather
+than silently switching providers.
+
+Assistant metadata records actual search calls, partial failures, and the
+termination reason. The UI displays this summary and keeps Deep Research
+visibly opt-in. SSE cancellation propagates out of the response generator;
+provider request timeouts and the outer deadline bound any in-flight call.

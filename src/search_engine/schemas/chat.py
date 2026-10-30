@@ -50,6 +50,12 @@ class WebCitation(BaseModel):
         return value
 
 
+class ResearchSummary(BaseModel):
+    search_count: int = Field(ge=0)
+    search_failures: int = Field(ge=0)
+    termination_reason: str
+
+
 class ChatAttachment(BaseModel):
     """Safe document metadata attached to a persisted user turn."""
 
@@ -93,6 +99,7 @@ class ChatResponse(BaseModel):
     citations: list[ChatCitation] = Field(default_factory=list)
     web_citations: list[WebCitation] = Field(default_factory=list)
     research_plan: list[str] = Field(default_factory=list)
+    research_summary: ResearchSummary | None = None
 
 
 class ConversationMessageOut(BaseModel):
@@ -108,6 +115,7 @@ class ConversationMessageOut(BaseModel):
     citations: list[ChatCitation] = Field(default_factory=list)
     web_citations: list[WebCitation] = Field(default_factory=list)
     research_plan: list[str] = Field(default_factory=list)
+    research_summary: ResearchSummary | None = None
     document_ids: list[uuid.UUID] = Field(default_factory=list)
     attachments: list[ChatAttachment] = Field(default_factory=list)
 

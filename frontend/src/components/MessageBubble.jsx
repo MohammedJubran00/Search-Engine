@@ -173,6 +173,15 @@ export default function MessageBubble({ message }) {
           </ol>
         </details>
       ) : null}
+      {!isUser && !message.isError && message.researchSummary ? (
+        <p className="message__research-summary">
+          {message.researchSummary.search_count} web search{message.researchSummary.search_count === 1 ? '' : 'es'}
+          {' · '}{String(message.researchSummary.termination_reason).replaceAll('_', ' ')}
+          {message.researchSummary.search_failures
+            ? ` · ${message.researchSummary.search_failures} failed`
+            : ''}
+        </p>
+      ) : null}
     </article>
   )
 }

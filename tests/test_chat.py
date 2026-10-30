@@ -259,6 +259,11 @@ def test_deep_research_is_explicit_and_plan_survives_reload(
     mock_invoke.return_value = {
         "answer": "Comparison",
         "research_plan": ["Compare features", "Compare costs"],
+        "research_summary": {
+            "search_count": 2,
+            "search_failures": 0,
+            "termination_reason": "sufficient_evidence",
+        },
     }
     headers = auth_headers(client)
     response = client.post(
@@ -270,11 +275,15 @@ def test_deep_research_is_explicit_and_plan_survives_reload(
     assert response.status_code == 200
     assert mock_invoke.call_args.args[0]["research_mode"] == "deep"
     assert response.json()["research_plan"] == ["Compare features", "Compare costs"]
+    assert response.json()["research_summary"]["search_count"] == 2
     latest = client.get("/api/conversations/latest", headers=headers).json()
     assert latest["messages"][1]["research_plan"] == [
         "Compare features",
         "Compare costs",
     ]
+    assert latest["messages"][1]["research_summary"]["termination_reason"] == (
+        "sufficient_evidence"
+    )
 
 
 def test_document_chat_rejects_deep_research(client: TestClient) -> None:

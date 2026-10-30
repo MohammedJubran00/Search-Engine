@@ -28,5 +28,9 @@ export function readDocumentStreamMetadata(payload, fallbackMode = 'general') {
     citations: Array.isArray(payload.citations) ? payload.citations : [],
     webCitations: Array.isArray(payload.web_citations) ? payload.web_citations : [],
     researchPlan: Array.isArray(payload.research_plan) ? payload.research_plan : [],
+    researchSummary:
+      payload.research_summary && typeof payload.research_summary === 'object'
+        ? payload.research_summary
+        : null,
   }
 }

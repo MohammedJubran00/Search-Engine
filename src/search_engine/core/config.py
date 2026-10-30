@@ -81,6 +81,10 @@ class Settings(BaseSettings):
     general_chat_history_max_messages: int = 12
     general_chat_history_max_characters: int = 12_000
     research_max_subquestions: int = 4
+    research_standard_max_searches: int = 2
+    research_deep_max_searches: int = 6
+    research_max_iterations: int = 4
+    research_max_execution_seconds: float = 90.0
 
     def _postgres_url(self, driver: str) -> str:
         password = quote_plus(self.db_password)

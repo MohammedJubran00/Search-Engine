@@ -61,15 +61,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# CORS settings:
-# Allow requests from any origin, using any HTTP method,
-# and accepting any request headers.
-# This allows the frontend to make requests to the API from any origin.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.cors_origins,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])

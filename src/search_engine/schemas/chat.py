@@ -107,7 +107,7 @@ class ChatAttachment(BaseModel):
 class ChatRequest(BaseModel):
     """Body for `POST /chat` and `POST /chat/stream`."""
 
-    query: str
+    query: str = Field(max_length=settings.rag_retrieval_max_query_characters)
     conversation_id: uuid.UUID | None = None
     mode: ChatMode = "general"
     research_mode: ResearchMode = "standard"

@@ -13,9 +13,10 @@ Does not talk to FastAPI routes or the LangGraph agent.
 """
 
 from pathlib import Path
+from typing import Literal
 from urllib.parse import quote_plus
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -36,10 +37,11 @@ class Settings(BaseSettings):
     db_user: str
     db_password: str
     gemini_api_key: SecretStr
-    jwt_secret_key: str
+    jwt_secret_key: str = Field(min_length=32, repr=False)
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
-    jwt_algorithm: str = "HS256"
+    jwt_algorithm: Literal["HS256"] = "HS256"
+    cors_allowed_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
     rag_storage_dir: Path = _PROJECT_ROOT / "data" / "uploads"
     rag_max_upload_bytes: int = 100 * 1024 * 1024
     rag_max_docx_uncompressed_bytes: int = 100 * 1024 * 1024
@@ -95,6 +97,11 @@ class Settings(BaseSettings):
             f"{driver}://{self.db_user}:{password}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
         )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Explicit browser origins; wildcard credential exposure is never enabled."""
+        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
 
     @property
     def database_url(self) -> str:

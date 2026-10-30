@@ -2,18 +2,9 @@ import Markdown from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import { formatDocumentBytes } from '../api/documents'
+import { isSafeHref } from '../api/safeLinks'
 import StructuredAnswer from './StructuredAnswer'
 import './MessageBubble.css'
-
-function isSafeHref(href) {
-  if (!href) return false
-  try {
-    const url = new URL(href, window.location.origin)
-    return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:'
-  } catch {
-    return false
-  }
-}
 
 const markdownComponents = {
   a({ href, children }) {

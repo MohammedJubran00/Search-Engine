@@ -48,6 +48,20 @@ def test_observability_enforces_concurrent_limit(monkeypatch: pytest.MonkeyPatch
     asyncio.run(exercise())
 
 
+def test_observability_enforces_daily_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "usage_daily_request_limit", 1)
+    service = ObservabilityService()
+    user_id = uuid.uuid4()
+
+    async def exercise() -> None:
+        record = await service.begin(user_id)
+        await service.finish(record)
+        with pytest.raises(UsageLimitError, match="Daily"):
+            await service.begin(user_id)
+
+    asyncio.run(exercise())
+
+
 def test_metrics_requires_authentication(client: TestClient) -> None:
     assert client.get("/api/metrics").status_code == 401
 

@@ -1,23 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   deleteDocument,
   fetchDocument,
   fetchDocuments,
-  MAX_DOCUMENT_BYTES,
-  SUPPORTED_DOCUMENT_EXTENSIONS,
-  uploadDocument,
+  formatDocumentBytes,
 } from '../api/documents'
 import './DocumentPanel.css'
 
-const FILE_ACCEPT =
-  '.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain'
-
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes < 0) return 'Unknown size'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 ** 2).toFixed(1)} MB`
-}
+const MAX_DOCUMENT_SELECTION = Number.parseInt(
+  import.meta.env.VITE_RAG_CHAT_MAX_DOCUMENT_SELECTION || '10',
+  10,
+)
 
 function formatDate(value) {
   const date = new Date(value)
@@ -28,50 +21,38 @@ function formatDate(value) {
   }).format(date)
 }
 
-function validateFile(file) {
-  if (!file) return 'Choose a document first.'
-  const extension = file.name.split('.').pop()?.toLowerCase()
-  if (!extension || !SUPPORTED_DOCUMENT_EXTENSIONS.has(extension)) {
-    return 'Choose a PDF, DOCX, or TXT document.'
-  }
-  if (file.size === 0) return 'The selected document is empty.'
-  if (file.size > MAX_DOCUMENT_BYTES) {
-    return `The document must be ${formatBytes(MAX_DOCUMENT_BYTES)} or smaller.`
-  }
-  return ''
-}
-
-export default function DocumentPanel() {
-  const [documents, setDocuments] = useState([])
-  const [selectedFile, setSelectedFile] = useState(null)
+export default function DocumentPanel({
+  documents,
+  onDocumentsChange,
+  selectionEnabled,
+  selectedDocumentIds,
+  onSelectionChange,
+}) {
   const [selectedDocument, setSelectedDocument] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [isUploading, setIsUploading] = useState(false)
   const [detailsLoadingId, setDetailsLoadingId] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [isExpanded, setIsExpanded] = useState(true)
-  const inputRef = useRef(null)
 
   const loadDocuments = useCallback(async () => {
     setIsLoading(true)
     setError('')
     try {
-      setDocuments(await fetchDocuments())
+      onDocumentsChange(await fetchDocuments())
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Could not load documents.')
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [onDocumentsChange])
 
   useEffect(() => {
     let cancelled = false
 
     fetchDocuments()
       .then((items) => {
-        if (!cancelled) setDocuments(items)
+        if (!cancelled) onDocumentsChange(items)
       })
       .catch((requestError) => {
         if (!cancelled) {
@@ -89,40 +70,15 @@ export default function DocumentPanel() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [onDocumentsChange])
 
-  function handleFileChange(event) {
-    const file = event.target.files?.[0] || null
-    setNotice('')
-    setError(validateFile(file))
-    setSelectedFile(file)
-  }
-
-  async function handleUpload(event) {
-    event.preventDefault()
-    const validationError = validateFile(selectedFile)
-    if (validationError || isUploading) {
-      setError(validationError)
-      return
+  useEffect(() => {
+    const existing = new Set(documents.map((item) => item.id))
+    const validSelection = selectedDocumentIds.filter((id) => existing.has(id))
+    if (validSelection.length !== selectedDocumentIds.length) {
+      onSelectionChange(validSelection)
     }
-
-    setIsUploading(true)
-    setError('')
-    setNotice('Uploading and validating document…')
-    try {
-      const uploaded = await uploadDocument(selectedFile)
-      setDocuments((current) => [uploaded, ...current.filter((item) => item.id !== uploaded.id)])
-      setSelectedDocument(uploaded)
-      setSelectedFile(null)
-      if (inputRef.current) inputRef.current.value = ''
-      setNotice('Document uploaded and parsed successfully.')
-    } catch (requestError) {
-      setNotice('')
-      setError(requestError instanceof Error ? requestError.message : 'Upload failed.')
-    } finally {
-      setIsUploading(false)
-    }
-  }
+  }, [documents, onSelectionChange, selectedDocumentIds])
 
   async function handleView(documentId) {
     setDetailsLoadingId(documentId)
@@ -142,12 +98,10 @@ export default function DocumentPanel() {
 
     setDeletingId(document.id)
     setError('')
-    setNotice('')
     try {
       await deleteDocument(document.id)
-      setDocuments((current) => current.filter((item) => item.id !== document.id))
+      onDocumentsChange(documents.filter((item) => item.id !== document.id))
       if (selectedDocument?.id === document.id) setSelectedDocument(null)
-      setNotice('Document deleted.')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Could not delete document.')
     } finally {
@@ -175,63 +129,55 @@ export default function DocumentPanel() {
             type="button"
             className="documents__secondary"
             onClick={loadDocuments}
-            disabled={isLoading || isUploading}
+            disabled={isLoading}
           >
             {isLoading ? 'Refreshing…' : 'Refresh'}
           </button>
-          <label className="documents__choose">
-            Choose document
-            <input
-              ref={inputRef}
-              type="file"
-              accept={FILE_ACCEPT}
-              onChange={handleFileChange}
-              disabled={isUploading}
-            />
-          </label>
         </div>
       </div>
 
       {isExpanded ? (
         <div className="documents__body">
-          <form className="documents__upload" onSubmit={handleUpload}>
-            <div className="documents__selection">
-              <span>{selectedFile ? selectedFile.name : 'No document selected'}</span>
-              <small>PDF, DOCX, or TXT · up to {formatBytes(MAX_DOCUMENT_BYTES)}</small>
-            </div>
-            <button
-              type="submit"
-              className="documents__upload-button"
-              disabled={!selectedFile || isUploading}
-            >
-              {isUploading ? 'Uploading…' : 'Upload document'}
-            </button>
-          </form>
-
           {error ? <p className="documents__message documents__message--error">{error}</p> : null}
-          {notice ? (
-            <p className="documents__message" role="status">
-              {isUploading ? <span className="documents__spinner" aria-hidden="true" /> : null}
-              {notice}
-            </p>
-          ) : null}
 
           {isLoading ? (
             <p className="documents__state">Loading documents…</p>
           ) : documents.length === 0 ? (
-            <p className="documents__state">No documents yet. Upload one to test parsing.</p>
+            <p className="documents__state">No documents yet. Upload one, then index it before Document Chat.</p>
           ) : (
             <ul className="documents__list">
               {documents.map((document) => (
                 <li key={document.id} className="documents__item">
+                  {selectionEnabled ? (
+                    <input
+                      className="documents__context-check"
+                      type="checkbox"
+                      aria-label={`Use ${document.original_filename} in Document Chat`}
+                      checked={selectedDocumentIds.includes(document.id)}
+                      disabled={
+                        document.indexing_status !== 'completed' ||
+                        (!selectedDocumentIds.includes(document.id) &&
+                          selectedDocumentIds.length >= MAX_DOCUMENT_SELECTION)
+                      }
+                      onChange={(event) => {
+                        onSelectionChange(
+                          event.target.checked
+                            ? [...selectedDocumentIds, document.id]
+                            : selectedDocumentIds.filter((id) => id !== document.id),
+                        )
+                      }}
+                    />
+                  ) : null}
                   <div className="documents__item-main">
                     <strong title={document.original_filename}>{document.original_filename}</strong>
                     <span>
-                      {formatBytes(document.file_size)} · {formatDate(document.created_at)}
+                      {formatDocumentBytes(document.file_size)} · {formatDate(document.created_at)}
                     </span>
                   </div>
-                  <span className={`documents__status documents__status--${document.processing_status}`}>
-                    {document.processing_status}
+                  <span className={`documents__status documents__status--${document.indexing_status}`}>
+                    {document.indexing_status === 'completed'
+                      ? 'indexed'
+                      : document.indexing_status.replace('_', ' ')}
                   </span>
                   <div className="documents__item-actions">
                     <button
@@ -264,7 +210,7 @@ export default function DocumentPanel() {
               <dl>
                 <div>
                   <dt>Size</dt>
-                  <dd>{formatBytes(selectedDocument.file_size)}</dd>
+                  <dd>{formatDocumentBytes(selectedDocument.file_size)}</dd>
                 </div>
                 <div>
                   <dt>Uploaded</dt>
@@ -273,6 +219,10 @@ export default function DocumentPanel() {
                 <div>
                   <dt>Status</dt>
                   <dd>{selectedDocument.processing_status}</dd>
+                </div>
+                <div>
+                  <dt>Index</dt>
+                  <dd>{selectedDocument.indexing_status?.replace('_', ' ')}</dd>
                 </div>
               </dl>
               <button type="button" onClick={() => setSelectedDocument(null)}>

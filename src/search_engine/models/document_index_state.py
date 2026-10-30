@@ -7,6 +7,7 @@ token for safe retries and concurrent-worker exclusion.
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
@@ -18,9 +19,12 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.search_engine.database.database import Base
+
+if TYPE_CHECKING:
+    from src.search_engine.models.document import Document
 
 DOCUMENT_INDEXING_STATUSES = ("not_indexed", "processing", "completed", "failed")
 
@@ -64,3 +68,4 @@ class DocumentIndexState(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    document: Mapped["Document"] = relationship(back_populates="index_state")

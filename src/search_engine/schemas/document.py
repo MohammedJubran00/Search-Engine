@@ -16,5 +16,6 @@ class DocumentResponse(BaseModel):
     content_type: str
     file_size: int
     processing_status: str
+    indexing_status: str = "not_indexed"
     created_at: datetime
     updated_at: datetime

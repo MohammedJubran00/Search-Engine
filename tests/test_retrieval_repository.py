@@ -203,6 +203,10 @@ def test_exact_cosine_search_filters_ownership_status_nulls_and_thresholds() -> 
                     user_id=owner.id,
                     document_ids=[primary.id, foreign.id],
                 ) == {primary.id}
+                assert await repository.resolve_searchable_document_ids(
+                    user_id=owner.id,
+                    document_ids=[primary.id, failed.id, foreign.id],
+                ) == {primary.id}
                 assert await repository.has_searchable_chunks(user_id=owner.id)
             finally:
                 await transaction.rollback()

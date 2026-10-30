@@ -1,19 +1,14 @@
 import { authorizedFetch } from './auth'
 import { readErrorDetail, readJsonResponse } from './errors'
+export {
+  DOCUMENT_FILE_ACCEPT,
+  MAX_DOCUMENT_BYTES,
+  SUPPORTED_DOCUMENT_EXTENSIONS,
+  formatDocumentBytes,
+  validateDocumentFile,
+} from './documentFiles'
 
 const DOCUMENTS_URL = '/api/documents'
-const configuredMaxBytes = Number.parseInt(
-  import.meta.env.VITE_RAG_MAX_UPLOAD_BYTES || '10485760',
-  10,
-)
-
-export const MAX_DOCUMENT_BYTES =
-  Number.isFinite(configuredMaxBytes) && configuredMaxBytes > 0
-    ? configuredMaxBytes
-    : 10 * 1024 * 1024
-
-export const SUPPORTED_DOCUMENT_EXTENSIONS = new Set(['pdf', 'docx', 'txt'])
-
 const NETWORK_ERROR =
   'Could not reach the document service. Make sure the FastAPI server is running.'
 
@@ -60,6 +55,14 @@ export function uploadDocument(file) {
     `${DOCUMENTS_URL}/upload`,
     { method: 'POST', body },
     'upload',
+  )
+}
+
+export function indexDocument(documentId) {
+  return documentRequest(
+    `${DOCUMENTS_URL}/${documentId}/index`,
+    { method: 'POST' },
+    'prepare',
   )
 }
 

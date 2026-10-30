@@ -1,5 +1,6 @@
 import { authorizedFetch } from './auth'
 import { readErrorDetail } from './errors'
+import { buildChatPayload, readDocumentStreamMetadata } from './chatPayload'
 
 const CHAT_STREAM_URL = '/chat/stream'
 const LATEST_CONVERSATION_URL = '/api/conversations/latest'
@@ -10,14 +11,6 @@ function jsonHeaders() {
   return {
     'Content-Type': 'application/json',
   }
-}
-
-function chatBody(query, conversationId) {
-  const body = { query }
-  if (conversationId) {
-    body.conversation_id = conversationId
-  }
-  return JSON.stringify(body)
 }
 
 export async function fetchLatestConversation() {
@@ -59,7 +52,7 @@ function parseSseBlock(block) {
 }
 
 export async function streamChatQuery(query, onDelta, options = {}) {
-  const { conversationId, onConversationId } = options
+  const { conversationId, onConversationId, onMetadata, mode, documentIds } = options
   let response
 
   try {
@@ -69,7 +62,9 @@ export async function streamChatQuery(query, onDelta, options = {}) {
         ...jsonHeaders(),
         Accept: 'text/event-stream',
       },
-      body: chatBody(query, conversationId),
+      body: JSON.stringify(
+        buildChatPayload(query, { conversationId, mode, documentIds }),
+      ),
     })
   } catch {
     throw new Error(UNREACHABLE)
@@ -132,6 +127,9 @@ export async function streamChatQuery(query, onDelta, options = {}) {
         answer += payload.delta
         onDelta(answer)
       }
+
+      const metadata = readDocumentStreamMetadata(payload, mode || 'general')
+      if (metadata) onMetadata?.(metadata)
     }
   }
 

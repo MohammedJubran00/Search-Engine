@@ -11,7 +11,7 @@ Communicates with: `models.message` and `models.conversation`.
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.search_engine.models.message import MESSAGE_ROLES, Message
@@ -49,6 +49,10 @@ class MessageRepository:
         result = await self._session.execute(
             select(Message)
             .where(Message.conversation_id == conversation_id)
-            .order_by(Message.created_at.asc())
+            .order_by(
+                Message.created_at.asc(),
+                case((Message.role == "user", 0), else_=1).asc(),
+                Message.id.asc(),
+            )
         )
         return list(result.scalars().all())

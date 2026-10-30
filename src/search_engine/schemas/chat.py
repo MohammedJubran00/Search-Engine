@@ -7,8 +7,36 @@ Responsibility: request/response shapes. No SQL, no JWT, no LangGraph.
 """
 
 import uuid
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from src.search_engine.core.config import settings
+
+ChatMode = Literal["general", "documents"]
+AnswerStatusValue = Literal["answered", "insufficient_evidence"]
+
+
+class ChatCitation(BaseModel):
+    """Validated source attribution safe to return to the authenticated user."""
+
+    label: str
+    document_id: uuid.UUID
+    chunk_id: uuid.UUID
+    filename: str
+    page_number: int | None = None
+    evidence_excerpt: str
+
+
+class ChatAttachment(BaseModel):
+    """Safe document metadata attached to a persisted user turn."""
+
+    document_id: uuid.UUID
+    filename: str
+    content_type: str
+    file_size: int
+    processing_status: str
+    indexing_status: str
 
 
 class ChatRequest(BaseModel):
@@ -16,6 +44,18 @@ class ChatRequest(BaseModel):
 
     query: str
     conversation_id: uuid.UUID | None = None
+    mode: ChatMode = "general"
+    document_ids: list[uuid.UUID] = Field(
+        default_factory=list,
+        max_length=settings.rag_chat_max_document_selection,
+    )
+
+    @model_validator(mode="after")
+    def validate_document_scope(self) -> "ChatRequest":
+        self.document_ids = list(dict.fromkeys(self.document_ids))
+        if self.mode == "general" and self.document_ids:
+            raise ValueError("document_ids may only be used in documents mode")
+        return self
 
 
 class ChatResponse(BaseModel):
@@ -23,6 +63,9 @@ class ChatResponse(BaseModel):
 
     answer: str
     conversation_id: uuid.UUID
+    mode: ChatMode = "general"
+    status: AnswerStatusValue | None = None
+    citations: list[ChatCitation] = Field(default_factory=list)
 
 
 class ConversationMessageOut(BaseModel):
@@ -33,6 +76,11 @@ class ConversationMessageOut(BaseModel):
     id: uuid.UUID
     role: str
     content: str
+    mode: ChatMode = "general"
+    status: AnswerStatusValue | None = None
+    citations: list[ChatCitation] = Field(default_factory=list)
+    document_ids: list[uuid.UUID] = Field(default_factory=list)
+    attachments: list[ChatAttachment] = Field(default_factory=list)
 
 
 class LatestConversationResponse(BaseModel):

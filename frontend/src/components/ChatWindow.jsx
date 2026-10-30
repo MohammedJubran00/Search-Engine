@@ -8,14 +8,20 @@ const EXAMPLE_QUERIES = [
   'What are the latest developments in quantum computing?',
   'Summarize the current state of renewable energy.',
 ]
+const DOCUMENT_EXAMPLE_QUERIES = [
+  'Summarize the main goals in my documents.',
+  'What risks are described in the selected documents?',
+  'Which recommendations are supported by the documents?',
+]
 
-export default function ChatWindow({ messages, isLoading, onExampleSelect }) {
+export default function ChatWindow({ messages, isLoading, onExampleSelect, mode }) {
   const endRef = useRef(null)
   const isEmpty = messages.length === 0 && !isLoading
   const lastMessage = messages[messages.length - 1]
   const waitingForFirstToken =
     isLoading &&
     (!lastMessage || lastMessage.role !== 'assistant' || !lastMessage.content)
+  const examples = mode === 'documents' ? DOCUMENT_EXAMPLE_QUERIES : EXAMPLE_QUERIES
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -28,11 +34,13 @@ export default function ChatWindow({ messages, isLoading, onExampleSelect }) {
           <p className="chat-window__eyebrow">Ready when you are</p>
           <h2 className="chat-window__heading">Ask a question. Get a sourced answer.</h2>
           <p className="chat-window__copy">
-            The engine searches the live web, then the AI writes a clear response.
-            Try one of these to get started.
+            {mode === 'documents'
+              ? 'Answers use only your indexed document evidence. They never fall back to web search.'
+              : 'The engine uses the existing Gemini and web-search flow to write a clear response.'}
+            {' '}Try one of these to get started.
           </p>
           <div className="chat-window__examples">
-            {EXAMPLE_QUERIES.map((query) => (
+            {examples.map((query) => (
               <button
                 key={query}
                 type="button"

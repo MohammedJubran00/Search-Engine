@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchLatestConversation, streamChatQuery } from './api/chat'
 import ChatWindow from './components/ChatWindow'
+import ChatModeSelector from './components/ChatModeSelector'
 import DocumentPanel from './components/DocumentPanel'
 import Header from './components/Header'
 import SearchInput from './components/SearchInput'
@@ -32,6 +33,10 @@ function messagesFromServer(records) {
       id: String(item.id),
       role: item.role,
       content: item.content,
+      mode: item.mode || 'general',
+      status: item.status || null,
+      citations: Array.isArray(item.citations) ? item.citations : [],
+      attachments: Array.isArray(item.attachments) ? item.attachments : [],
     }))
 }
 
@@ -39,6 +44,9 @@ export default function App() {
   const [messages, setMessages] = useState([])
   const [conversationId, setConversationId] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [chatMode, setChatMode] = useState('general')
+  const [documents, setDocuments] = useState([])
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState([])
   const isLoadingRef = useRef(false)
   const conversationIdRef = useRef(null)
 
@@ -71,11 +79,27 @@ export default function App() {
 
   const handleSubmit = useCallback(async (query) => {
     const trimmed = query.trim()
-    if (!trimmed || isLoadingRef.current) return
+    if (!trimmed || isLoadingRef.current) return false
 
     isLoadingRef.current = true
     setIsLoading(true)
-    const userMessage = createMessage({ role: 'user', content: trimmed })
+    const requestMode = chatMode
+    const requestDocumentIds = requestMode === 'documents' ? selectedDocumentIds : []
+    const userMessage = createMessage({
+      role: 'user',
+      content: trimmed,
+      mode: requestMode,
+      attachments: documents
+        .filter((item) => requestDocumentIds.includes(item.id))
+        .map((item) => ({
+          document_id: item.id,
+          filename: item.original_filename,
+          content_type: item.content_type,
+          file_size: item.file_size,
+          processing_status: item.processing_status,
+          indexing_status: item.indexing_status,
+        })),
+    })
     setMessages((current) => [...current, userMessage])
 
     let assistantId = null
@@ -101,14 +125,25 @@ export default function App() {
 
     try {
       await streamChatQuery(trimmed, (fullText) => {
-        upsertAssistant({ content: fullText, isError: false })
+        upsertAssistant({ content: fullText, isError: false, mode: requestMode })
       }, {
         conversationId: conversationIdRef.current,
+        mode: requestMode,
+        documentIds: requestDocumentIds,
         onConversationId: (id) => {
           conversationIdRef.current = id
           setConversationId(id)
         },
+        onMetadata: (metadata) => {
+          upsertAssistant({
+            mode: metadata.mode,
+            status: metadata.status,
+            citations: metadata.citations,
+          })
+        },
       })
+      setSelectedDocumentIds([])
+      return true
     } catch (error) {
       upsertAssistant({
         isError: true,
@@ -117,23 +152,66 @@ export default function App() {
             ? error.message
             : 'Something went wrong. Please try again.',
       })
+      return false
     } finally {
       isLoadingRef.current = false
       setIsLoading(false)
     }
+  }, [chatMode, documents, selectedDocumentIds])
+
+  const handleModeChange = useCallback((nextMode) => {
+    setChatMode(nextMode)
+    if (nextMode === 'general') setSelectedDocumentIds([])
+  }, [])
+
+  const handleDocumentUpsert = useCallback((document) => {
+    setDocuments((current) => [
+      document,
+      ...current.filter((item) => item.id !== document.id),
+    ])
+  }, [])
+
+  const handleAttachDocument = useCallback((documentId) => {
+    setChatMode('documents')
+    setSelectedDocumentIds((current) =>
+      current.includes(documentId) ? current : [...current, documentId],
+    )
   }, [])
 
   return (
     <div className="app-shell">
       <Header />
       <main className="app-main">
-        <DocumentPanel />
+        <DocumentPanel
+          documents={documents}
+          onDocumentsChange={setDocuments}
+          selectionEnabled={chatMode === 'documents'}
+          selectedDocumentIds={selectedDocumentIds}
+          onSelectionChange={setSelectedDocumentIds}
+        />
+        <ChatModeSelector
+          mode={chatMode}
+          selectedCount={selectedDocumentIds.length}
+          onChange={handleModeChange}
+          disabled={isLoading}
+        />
         <ChatWindow
           messages={messages}
           isLoading={isLoading}
           onExampleSelect={handleSubmit}
+          mode={chatMode}
         />
-        <SearchInput onSubmit={handleSubmit} disabled={isLoading} />
+        <SearchInput
+          onSubmit={handleSubmit}
+          disabled={isLoading}
+          documents={documents}
+          attachedDocumentIds={selectedDocumentIds}
+          onAttachDocument={handleAttachDocument}
+          onRemoveDocument={(documentId) =>
+            setSelectedDocumentIds((current) => current.filter((id) => id !== documentId))
+          }
+          onDocumentUpsert={handleDocumentUpsert}
+        />
       </main>
     </div>
   )

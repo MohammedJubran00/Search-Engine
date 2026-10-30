@@ -36,6 +36,29 @@ class DocumentRetrievalRepository:
         )
         return set(result.scalars().all())
 
+    async def resolve_searchable_document_ids(
+        self,
+        *,
+        user_id: uuid.UUID,
+        document_ids: Sequence[uuid.UUID],
+    ) -> set[uuid.UUID]:
+        """Return selected owned documents having a completed usable index."""
+        if not document_ids:
+            return set()
+        result = await self._session.execute(
+            select(Document.id)
+            .join(DocumentIndexState, DocumentIndexState.document_id == Document.id)
+            .join(DocumentChunk, DocumentChunk.document_id == Document.id)
+            .where(
+                Document.user_id == user_id,
+                Document.id.in_(document_ids),
+                DocumentIndexState.status == "completed",
+                DocumentChunk.embedding.is_not(None),
+            )
+            .distinct()
+        )
+        return set(result.scalars().all())
+
     async def has_searchable_chunks(
         self,
         *,

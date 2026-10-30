@@ -3,6 +3,115 @@
   padding-top: 4px;
 }
 
+.search-input__attachments {
+  display: flex;
+  gap: 8px;
+  padding: 0 4px 8px;
+  overflow-x: auto;
+}
+
+.attachment-card {
+  display: flex;
+  align-items: center;
+  flex: 0 0 min(330px, 88vw);
+  gap: 8px;
+  padding: 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.attachment-card__icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-radius: 9px;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.attachment-card__text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.attachment-card__text strong,
+.attachment-card__text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-card__text strong { font-size: 0.78rem; }
+.attachment-card__text small { color: var(--text-faint); font-size: 0.68rem; }
+
+.attachment-card button,
+.search-input__attach-menu button {
+  padding: 5px 7px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 0.68rem;
+}
+
+.search-input__status {
+  margin: 0 6px 7px;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.search-input__attach-wrap { position: relative; }
+
+.search-input__attach {
+  width: 38px;
+  height: 38px;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-size: 1.35rem;
+}
+
+.search-input__attach-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 10;
+  display: grid;
+  width: min(330px, 82vw);
+  max-height: 300px;
+  gap: 5px;
+  padding: 8px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.search-input__attach-menu > span {
+  padding: 5px 6px 2px;
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.search-input__attach-menu button {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  text-align: left;
+}
+
+.search-input__attach-menu small { color: var(--text-faint); }
+
 .search-input__bar {
   display: flex;
   align-items: flex-end;

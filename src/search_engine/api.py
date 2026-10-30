@@ -40,6 +40,18 @@ from src.search_engine.main import stream_agent
 from src.search_engine.models.user import User
 from src.search_engine.schemas.chat import ChatRequest, ChatResponse
 from src.search_engine.services.chat_service import ChatService, ConversationNotFoundError
+from src.search_engine.services.document_service import (
+    DocumentNotFoundError,
+    DocumentService,
+)
+from src.search_engine.rag.answering import RagAnswerResult, SourceReference
+from src.search_engine.rag.generation import RagGenerationError
+from src.search_engine.services.rag_answer_service import RagAnswerService
+from src.search_engine.services.retrieval_service import (
+    RetrievalDocumentAccessError,
+    RetrievalDocumentUnavailableError,
+    RetrievalError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -138,11 +150,99 @@ def to_answer_text(content) -> str:
 _STREAM_END = object()
 _EMPTY_QUERY = "Please enter a question."
 _CONVERSATION_NOT_FOUND = "Conversation not found."
+_DOCUMENT_UNAVAILABLE = "One or more selected documents are unavailable."
+_DOCUMENT_NOT_INDEXED = "One or more selected documents are not indexed and available."
+_RETRIEVAL_FAILED = "Document retrieval is temporarily unavailable. Please try again."
+_GENERATION_FAILED = "The document answer could not be generated. Please try again."
 
 
 def graph_thread_id(conversation_id: uuid.UUID) -> str:
     """LangGraph in-memory key. Not an identity claim — ownership was already checked."""
     return str(conversation_id)
+
+
+def citation_payload(source: SourceReference) -> dict:
+    return {
+        "label": source.label,
+        "document_id": str(source.document_id),
+        "chunk_id": str(source.chunk_id),
+        "filename": source.filename,
+        "page_number": source.page_number,
+        "evidence_excerpt": source.evidence_excerpt,
+    }
+
+
+async def resolve_chat_attachments(
+    *,
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    document_ids: list[uuid.UUID],
+) -> list[dict]:
+    """Resolve visible attachment metadata without trusting client filenames."""
+    if not document_ids:
+        return []
+    service = DocumentService(db)
+    attachments: list[dict] = []
+    for document_id in document_ids:
+        try:
+            document = await service.get_for_user(
+                document_id=document_id,
+                user_id=user_id,
+            )
+        except DocumentNotFoundError as exc:
+            raise RetrievalDocumentAccessError(
+                "One or more requested documents are unavailable."
+            ) from exc
+        if document.indexing_status != "completed":
+            raise RetrievalDocumentUnavailableError(
+                "One or more selected documents are not indexed and available."
+            )
+        attachments.append(
+            {
+                "document_id": str(document.id),
+                "filename": document.original_filename,
+                "content_type": document.content_type,
+                "file_size": document.file_size,
+                "processing_status": document.processing_status,
+                "indexing_status": document.indexing_status,
+            }
+        )
+    return attachments
+
+
+async def answer_document_turn(
+    *,
+    db: AsyncSession,
+    service: ChatService,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    query: str,
+    document_ids: list[uuid.UUID],
+) -> RagAnswerResult:
+    result = await RagAnswerService(db).answer(
+        user_id=user_id,
+        question=query,
+        document_ids=document_ids or None,
+    )
+    await service.add_assistant_message(
+        user_id=user_id,
+        conversation_id=conversation_id,
+        content=result.answer,
+        mode="documents",
+        status=result.status.value,
+        citations=[citation_payload(source) for source in result.citations],
+    )
+    return result
+
+
+def document_error_response(exc: Exception) -> JSONResponse:
+    if isinstance(exc, RetrievalDocumentAccessError):
+        return error_response(404, _DOCUMENT_UNAVAILABLE)
+    if isinstance(exc, RetrievalDocumentUnavailableError):
+        return error_response(409, _DOCUMENT_NOT_INDEXED)
+    if isinstance(exc, RetrievalError):
+        return error_response(503, _RETRIEVAL_FAILED)
+    return error_response(503, _GENERATION_FAILED)
 
 
 @app.get("/")
@@ -162,13 +262,51 @@ async def chat(
 
     service = ChatService(db)
     try:
+        attachments = await resolve_chat_attachments(
+            db=db,
+            user_id=user.id,
+            document_ids=request.document_ids if request.mode == "documents" else [],
+        )
+    except (RetrievalDocumentAccessError, RetrievalDocumentUnavailableError) as exc:
+        return document_error_response(exc)
+    try:
         conversation = await service.start_user_turn(
             user_id=user.id,
             conversation_id=request.conversation_id,
             query=query,
+            mode=request.mode,
+            document_ids=request.document_ids,
+            attachments=attachments,
         )
     except ConversationNotFoundError:
         return error_response(404, _CONVERSATION_NOT_FOUND)
+
+    if request.mode == "documents":
+        # Persist the user turn before RAG releases its read transaction.
+        await db.commit()
+        try:
+            result = await answer_document_turn(
+                db=db,
+                service=service,
+                user_id=user.id,
+                conversation_id=conversation.id,
+                query=query,
+                document_ids=request.document_ids,
+            )
+        except (RetrievalError, RagGenerationError) as exc:
+            logger.warning(
+                "Document chat failed for conversation_id=%s error_type=%s",
+                conversation.id,
+                type(exc).__name__,
+            )
+            return document_error_response(exc)
+        return ChatResponse(
+            answer=result.answer,
+            conversation_id=conversation.id,
+            mode="documents",
+            status=result.status.value,
+            citations=[citation_payload(source) for source in result.citations],
+        )
 
     thread_id = graph_thread_id(conversation.id)
 
@@ -208,6 +346,7 @@ async def chat(
             user_id=user.id,
             conversation_id=conversation.id,
             content=answer,
+            mode="general",
         )
     except ConversationNotFoundError:
         return error_response(404, _CONVERSATION_NOT_FOUND)
@@ -232,10 +371,21 @@ async def chat_stream(
 
     service = ChatService(db)
     try:
+        attachments = await resolve_chat_attachments(
+            db=db,
+            user_id=user.id,
+            document_ids=request.document_ids if request.mode == "documents" else [],
+        )
+    except (RetrievalDocumentAccessError, RetrievalDocumentUnavailableError) as exc:
+        return document_error_response(exc)
+    try:
         conversation = await service.start_user_turn(
             user_id=user.id,
             conversation_id=request.conversation_id,
             query=query,
+            mode=request.mode,
+            document_ids=request.document_ids,
+            attachments=attachments,
         )
     except ConversationNotFoundError:
         return error_response(404, _CONVERSATION_NOT_FOUND)
@@ -243,6 +393,61 @@ async def chat_stream(
     conversation_id = conversation.id
     user_id = user.id
     thread_id = graph_thread_id(conversation_id)
+
+    if request.mode == "documents":
+        await db.commit()
+
+        async def generate_document_answer():
+            try:
+                yield sse_event({"conversation_id": str(conversation_id)})
+                result = await answer_document_turn(
+                    db=db,
+                    service=service,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    query=query,
+                    document_ids=request.document_ids,
+                )
+                citations = [citation_payload(source) for source in result.citations]
+                # One honest completed-answer delta preserves old SSE clients. It is
+                # not represented as native token streaming and causes no second call.
+                yield sse_event(
+                    {
+                        "delta": result.answer,
+                        "answer": result.answer,
+                        "mode": "documents",
+                        "status": result.status.value,
+                        "citations": citations,
+                    }
+                )
+                yield sse_event(
+                    {
+                        "done": True,
+                        "conversation_id": str(conversation_id),
+                        "mode": "documents",
+                        "status": result.status.value,
+                    }
+                )
+            except asyncio.CancelledError:
+                raise
+            except (RetrievalError, RagGenerationError) as exc:
+                logger.warning(
+                    "Streaming document chat failed for conversation_id=%s error_type=%s",
+                    conversation_id,
+                    type(exc).__name__,
+                )
+                response = document_error_response(exc)
+                yield sse_event({"error": json.loads(response.body)["error"]})
+
+        return StreamingResponse(
+            generate_document_answer(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     async def generate():
         try:
@@ -274,6 +479,7 @@ async def chat_stream(
                     user_id=user_id,
                     conversation_id=conversation_id,
                     content=answer,
+                    mode="general",
                 )
             except ConversationNotFoundError:
                 yield sse_event({"error": _CONVERSATION_NOT_FOUND})

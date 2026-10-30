@@ -1,6 +1,7 @@
 import Markdown from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
+import { formatDocumentBytes } from '../api/documents'
 import './MessageBubble.css'
 
 function isSafeHref(href) {
@@ -100,6 +101,49 @@ export default function MessageBubble({ message }) {
           </div>
         )}
       </div>
+      {isUser && Array.isArray(message.attachments) && message.attachments.length ? (
+        <div className="message__attachments" aria-label="Attached documents">
+          {message.attachments.map((attachment) => (
+            <div key={attachment.document_id} className="message__attachment">
+              <span>{attachment.filename.split('.').pop()?.toUpperCase() || 'FILE'}</span>
+              <div>
+                <strong>{attachment.filename}</strong>
+                <small>
+                  {formatDocumentBytes(attachment.file_size)} ·{' '}
+                  {attachment.indexing_status === 'completed' ? 'Indexed' : attachment.indexing_status}
+                </small>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {!message.isError && message.mode === 'documents' ? (
+        <div className="message__grounding">
+          <span className="message__mode">
+            {message.status === 'insufficient_evidence'
+              ? 'Insufficient document evidence'
+              : 'Document-grounded'}
+          </span>
+          {!isUser && Array.isArray(message.citations) && message.citations.length ? (
+            <ol className="message__citations" aria-label="Document citations">
+              {message.citations.map((citation) => (
+                <li key={`${citation.label}-${citation.chunk_id}`}>
+                  <strong>[{citation.label}] {citation.filename}</strong>
+                  <span>
+                    {citation.page_number == null ? 'Page unavailable' : `Page ${citation.page_number}`}
+                  </span>
+                  {citation.evidence_excerpt ? (
+                    <details>
+                      <summary>View evidence excerpt</summary>
+                      <q>{citation.evidence_excerpt}</q>
+                    </details>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   )
 }

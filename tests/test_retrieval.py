@@ -12,6 +12,7 @@ from src.search_engine.services.retrieval_service import (
     InvalidRetrievalQueryError,
     QueryEmbeddingError,
     RetrievalDocumentAccessError,
+    RetrievalDocumentUnavailableError,
     SemanticRetrievalService,
 )
 
@@ -36,6 +37,7 @@ class FakeQueryEmbeddings:
 class FakeRetrievalRepository:
     def __init__(self) -> None:
         self.owned: set[uuid.UUID] = set()
+        self.searchable_ids: set[uuid.UUID] = set()
         self.searchable = True
         self.results: list[RetrievedChunk] = []
         self.search_calls: list[dict[str, object]] = []
@@ -47,6 +49,9 @@ class FakeRetrievalRepository:
     async def has_searchable_chunks(self, *, user_id, document_ids=None):
         self.has_calls.append({"user_id": user_id, "document_ids": document_ids})
         return self.searchable
+
+    async def resolve_searchable_document_ids(self, *, user_id, document_ids):
+        return set(document_ids) & self.searchable_ids
 
     async def search(
         self,
@@ -98,6 +103,7 @@ def test_retrieval_embeds_trimmed_query_and_passes_validated_controls() -> None:
     document_id = uuid.uuid4()
     repository = FakeRetrievalRepository()
     repository.owned = {document_id}
+    repository.searchable_ids = {document_id}
     repository.results = [_result()]
     embeddings = FakeQueryEmbeddings()
 
@@ -171,6 +177,22 @@ def test_foreign_document_filter_is_rejected_without_embedding() -> None:
         )
     assert embeddings.queries == []
     assert repository.search_calls == []
+
+
+def test_owned_but_unindexed_filter_is_rejected_without_embedding() -> None:
+    document_id = uuid.uuid4()
+    repository = FakeRetrievalRepository()
+    repository.owned = {document_id}
+    embeddings = FakeQueryEmbeddings()
+    with pytest.raises(RetrievalDocumentUnavailableError):
+        asyncio.run(
+            _service(repository, embeddings).retrieve(
+                user_id=uuid.uuid4(),
+                query="question",
+                document_ids=[document_id],
+            )
+        )
+    assert embeddings.queries == []
 
 
 def test_no_indexed_chunks_returns_empty_without_api_cost() -> None:

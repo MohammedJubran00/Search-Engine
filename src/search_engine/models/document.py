@@ -28,6 +28,7 @@ from src.search_engine.database.database import Base
 
 if TYPE_CHECKING:
     from src.search_engine.models.document_chunk import DocumentChunk
+    from src.search_engine.models.document_index_state import DocumentIndexState
     from src.search_engine.models.user import User
 
 DOCUMENT_PROCESSING_STATUSES = ("pending", "processing", "completed", "failed")
@@ -86,3 +87,14 @@ class Document(Base):
         order_by="DocumentChunk.chunk_index",
         passive_deletes=True,
     )
+    index_state: Mapped["DocumentIndexState | None"] = relationship(
+        back_populates="document",
+        uselist=False,
+        passive_deletes=True,
+    )
+
+    @property
+    def indexing_status(self) -> str:
+        """Safe public status; an absent lifecycle row means not indexed."""
+        state = self.__dict__.get("index_state")
+        return state.status if state is not None else "not_indexed"

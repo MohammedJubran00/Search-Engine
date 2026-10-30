@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     rag_answer_token_margin: int = 256
     rag_answer_max_sources: int = 8
     rag_answer_evidence_excerpt_characters: int = 320
+    rag_chat_max_document_selection: int = 10
 
     def _postgres_url(self, driver: str) -> str:
         password = quote_plus(self.db_password)

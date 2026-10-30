@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.search_engine.models.document import (
     DOCUMENT_PROCESSING_STATUSES,
@@ -47,6 +48,7 @@ class DocumentRepository:
     async def list_for_user(self, user_id: uuid.UUID) -> list[Document]:
         result = await self._session.execute(
             select(Document)
+            .options(selectinload(Document.index_state))
             .where(Document.user_id == user_id)
             .order_by(Document.created_at.desc())
         )
@@ -58,10 +60,13 @@ class DocumentRepository:
         user_id: uuid.UUID,
     ) -> Document | None:
         result = await self._session.execute(
-            select(Document).where(
+            select(Document)
+            .options(selectinload(Document.index_state))
+            .where(
                 Document.id == document_id,
                 Document.user_id == user_id,
             )
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 

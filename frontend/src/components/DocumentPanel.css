@@ -192,6 +192,16 @@
   border-bottom: 1px solid var(--border);
 }
 
+.documents__context-check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.documents__item:has(.documents__context-check) {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+
 .documents__item-main {
   display: grid;
   min-width: 0;
@@ -319,6 +329,10 @@
 
   .documents__item {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .documents__item:has(.documents__context-check) {
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .documents__item-actions {

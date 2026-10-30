@@ -34,6 +34,13 @@ class RetrievalRepository(Protocol):
         document_ids: Sequence[uuid.UUID] | None = None,
     ) -> bool: ...
 
+    async def resolve_searchable_document_ids(
+        self,
+        *,
+        user_id: uuid.UUID,
+        document_ids: Sequence[uuid.UUID],
+    ) -> set[uuid.UUID]: ...
+
     async def search(
         self,
         *,
@@ -55,6 +62,10 @@ class InvalidRetrievalQueryError(RetrievalError, ValueError):
 
 class RetrievalDocumentAccessError(RetrievalError, LookupError):
     """Raised when any requested document is missing or foreign."""
+
+
+class RetrievalDocumentUnavailableError(RetrievalError):
+    """Raised when an owned selected document lacks a completed usable index."""
 
 
 class QueryEmbeddingError(RetrievalError):
@@ -101,6 +112,14 @@ class SemanticRetrievalService:
                 if owned != set(filters):
                     raise RetrievalDocumentAccessError(
                         "One or more requested documents are unavailable."
+                    )
+                searchable = await self._repository.resolve_searchable_document_ids(
+                    user_id=user_id,
+                    document_ids=filters,
+                )
+                if searchable != set(filters):
+                    raise RetrievalDocumentUnavailableError(
+                        "One or more selected documents are not indexed and available."
                     )
 
             if not await self._repository.has_searchable_chunks(

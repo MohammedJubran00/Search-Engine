@@ -14,7 +14,7 @@ Communicates with: `ConversationRepository`, `MessageRepository`, and
 import json
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +44,9 @@ class PersistedChatMessage:
     research_plan: tuple[str, ...] = ()
     research_summary: dict[str, Any] | None = None
     evidence_conflicts: tuple[dict[str, Any], ...] = ()
+    presentation: dict[str, Any] = field(
+        default_factory=lambda: {"type": "standard"}
+    )
     document_ids: tuple[uuid.UUID, ...] = ()
     attachments: tuple[dict[str, Any], ...] = ()
 
@@ -119,6 +122,7 @@ class ChatService:
         research_plan: Sequence[str] = (),
         research_summary: Mapping[str, Any] | None = None,
         evidence_conflicts: Sequence[Mapping[str, Any]] = (),
+        presentation: Mapping[str, Any] | None = None,
     ) -> None:
         """Store the assistant answer only if the conversation still belongs to the user."""
         conversation = await self._conversations.get_by_id_for_user(
@@ -139,6 +143,7 @@ class ChatService:
                 research_plan=research_plan,
                 research_summary=research_summary,
                 evidence_conflicts=evidence_conflicts,
+                presentation=presentation,
             ),
         )
         await self._conversations.mark_updated(conversation)
@@ -205,6 +210,7 @@ def _encode_message(
     research_plan: Sequence[str] = (),
     research_summary: Mapping[str, Any] | None = None,
     evidence_conflicts: Sequence[Mapping[str, Any]] = (),
+    presentation: Mapping[str, Any] | None = None,
     document_ids: Sequence[uuid.UUID] = (),
     attachments: Sequence[Mapping[str, Any]] = (),
 ) -> str:
@@ -219,6 +225,7 @@ def _encode_message(
         "research_plan": list(research_plan),
         "research_summary": dict(research_summary) if research_summary else None,
         "evidence_conflicts": [dict(item) for item in evidence_conflicts],
+        "presentation": dict(presentation) if presentation else {"type": "standard"},
         "document_ids": [str(item) for item in document_ids],
         "attachments": [dict(item) for item in attachments],
     }
@@ -247,6 +254,7 @@ def _decode_message(message: Message) -> PersistedChatMessage:
         research_plan = payload.get("research_plan", [])
         research_summary = payload.get("research_summary")
         evidence_conflicts = payload.get("evidence_conflicts", [])
+        presentation = payload.get("presentation", {"type": "standard"})
         document_ids = payload.get("document_ids", [])
         attachments = payload.get("attachments", [])
         if not isinstance(content, str) or mode not in _CHAT_MODES:
@@ -275,6 +283,8 @@ def _decode_message(message: Message) -> PersistedChatMessage:
             isinstance(item, dict) for item in evidence_conflicts
         ):
             raise ValueError
+        if not isinstance(presentation, dict):
+            raise ValueError
         parsed_document_ids = tuple(uuid.UUID(item) for item in document_ids)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         # A corrupt envelope is never interpreted as trusted attribution.
@@ -294,6 +304,7 @@ def _decode_message(message: Message) -> PersistedChatMessage:
         research_plan=tuple(research_plan),
         research_summary=research_summary,
         evidence_conflicts=tuple(evidence_conflicts),
+        presentation=presentation,
         document_ids=parsed_document_ids,
         attachments=tuple(attachments),
     )

@@ -1,0 +1,14 @@
+.structured-answer__table { max-width: 100%; overflow-x: auto; }
+.structured-answer__table table { width: 100%; border-collapse: collapse; }
+.structured-answer__table th,
+.structured-answer__table td { padding: 8px; text-align: left; border: 1px solid var(--border); }
+.structured-answer__table th { color: var(--accent); background: var(--bg-input); }
+
+.structured-answer__timeline,
+.structured-answer__steps,
+.structured-answer__checklist { display: grid; gap: 8px; margin: 0; padding-left: 22px; }
+.structured-answer__timeline li { display: grid; grid-template-columns: minmax(72px, auto) 1fr; gap: 10px; }
+.structured-answer__timeline time { color: var(--accent); font-weight: 700; }
+.structured-answer__checklist { padding: 0; list-style: none; }
+.structured-answer__checklist li { display: flex; align-items: flex-start; gap: 8px; }
+.structured-answer__checklist input { margin-top: 4px; accent-color: var(--accent); }

@@ -2,6 +2,7 @@ import Markdown from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
 import { formatDocumentBytes } from '../api/documents'
+import StructuredAnswer from './StructuredAnswer'
 import './MessageBubble.css'
 
 function isSafeHref(href) {
@@ -90,6 +91,8 @@ export default function MessageBubble({ message }) {
       <div className="message__body">
         {isUser || message.isError ? (
           <p className="message__plain">{message.content}</p>
+        ) : message.presentation?.type && message.presentation.type !== 'standard' ? (
+          <StructuredAnswer presentation={message.presentation} />
         ) : (
           <div className="message__markdown">
             <Markdown

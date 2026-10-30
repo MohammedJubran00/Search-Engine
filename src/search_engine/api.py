@@ -47,6 +47,7 @@ from src.search_engine.services.document_service import (
 )
 from src.search_engine.rag.answering import RagAnswerResult, SourceReference
 from src.search_engine.rag.generation import RagGenerationError
+from src.search_engine.research.presentation import derive_answer_presentation
 from src.search_engine.services.rag_answer_service import RagAnswerService
 from src.search_engine.services.retrieval_service import (
     RetrievalDocumentAccessError,
@@ -242,6 +243,7 @@ async def answer_document_turn(
         question=query,
         document_ids=document_ids or None,
     )
+    presentation = derive_answer_presentation(result.answer).model_dump()
     await service.add_assistant_message(
         user_id=user_id,
         conversation_id=conversation_id,
@@ -249,6 +251,7 @@ async def answer_document_turn(
         mode="documents",
         status=result.status.value,
         citations=[citation_payload(source) for source in result.citations],
+        presentation=presentation,
     )
     return result
 
@@ -333,6 +336,7 @@ async def chat(
             mode="documents",
             status=result.status.value,
             citations=[citation_payload(source) for source in result.citations],
+            presentation=derive_answer_presentation(result.answer),
         )
 
     thread_id = graph_thread_id(conversation.id)
@@ -402,6 +406,7 @@ async def chat(
         )
         if isinstance(item, dict)
     ]
+    presentation = derive_answer_presentation(answer).model_dump()
     try:
         await service.add_assistant_message(
             user_id=user.id,
@@ -412,6 +417,7 @@ async def chat(
             research_plan=research_plan,
             research_summary=research_summary,
             evidence_conflicts=evidence_conflicts,
+            presentation=presentation,
         )
     except ConversationNotFoundError:
         return error_response(404, _CONVERSATION_NOT_FOUND)
@@ -423,6 +429,7 @@ async def chat(
         research_plan=research_plan,
         research_summary=research_summary,
         evidence_conflicts=evidence_conflicts,
+        presentation=presentation,
     )
 
 
@@ -490,6 +497,7 @@ async def chat_stream(
                     document_ids=request.document_ids,
                 )
                 citations = [citation_payload(source) for source in result.citations]
+                presentation = derive_answer_presentation(result.answer).model_dump()
                 # One honest completed-answer delta preserves old SSE clients. It is
                 # not represented as native token streaming and causes no second call.
                 yield sse_event(
@@ -499,6 +507,7 @@ async def chat_stream(
                         "mode": "documents",
                         "status": result.status.value,
                         "citations": citations,
+                        "presentation": presentation,
                     }
                 )
                 yield sse_event(
@@ -588,6 +597,7 @@ async def chat_stream(
                 return
 
             try:
+                presentation = derive_answer_presentation(answer).model_dump()
                 await service.add_assistant_message(
                     user_id=user_id,
                     conversation_id=conversation_id,
@@ -597,12 +607,13 @@ async def chat_stream(
                     research_plan=research_plan,
                     research_summary=research_summary,
                     evidence_conflicts=evidence_conflicts,
+                    presentation=presentation,
                 )
             except ConversationNotFoundError:
                 yield sse_event({"error": _CONVERSATION_NOT_FOUND})
                 return
 
-            if web_citations or research_plan:
+            if web_citations or research_plan or presentation["type"] != "standard":
                 yield sse_event(
                     {
                         "mode": "general",
@@ -610,6 +621,7 @@ async def chat_stream(
                         "research_plan": research_plan,
                         "research_summary": research_summary,
                         "evidence_conflicts": evidence_conflicts,
+                        "presentation": presentation,
                     }
                 )
             yield sse_event({"done": True, "conversation_id": str(conversation_id)})

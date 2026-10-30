@@ -154,6 +154,25 @@ def test_general_chat_persists_only_tool_verified_web_citations(
     assert latest["messages"][1]["evidence_conflicts"][0]["claims"][1]["value"] == "80"
 
 
+@patch("src.search_engine.api.graph_app.invoke")
+def test_structured_answer_is_derived_without_a_second_model_call(
+    mock_invoke,
+    client: TestClient,
+) -> None:
+    mock_invoke.return_value = {
+        "answer": "| Option | Value |\n| --- | --- |\n| A | Fast |\n| B | Flexible |"
+    }
+    headers = auth_headers(client)
+    response = client.post("/chat", json={"query": "Compare options"}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["presentation"]["type"] == "comparison"
+    assert response.json()["presentation"]["headers"] == ["Option", "Value"]
+    mock_invoke.assert_called_once()
+    latest = client.get("/api/conversations/latest", headers=headers).json()
+    assert latest["messages"][1]["presentation"]["rows"][0] == ["A", "Fast"]
+
+
 @patch("src.search_engine.api.graph_app.invoke", return_value={"answer": "secret-answer"})
 def test_user_cannot_use_another_users_conversation(
     mock_invoke,

@@ -35,5 +35,9 @@ export function readDocumentStreamMetadata(payload, fallbackMode = 'general') {
     evidenceConflicts: Array.isArray(payload.evidence_conflicts)
       ? payload.evidence_conflicts
       : [],
+    presentation:
+      payload.presentation && typeof payload.presentation === 'object'
+        ? payload.presentation
+        : { type: 'standard', headers: [], rows: [], items: [] },
   }
 }

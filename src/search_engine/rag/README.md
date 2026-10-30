@@ -459,3 +459,17 @@ agreement, potential conflict, or different explicit time periods and shows
 both source claims without inventing a resolution. Weak-context and mismatched-
 unit pairs are left unclassified. No additional Gemini verification call is
 enabled.
+
+## Structured answer presentation
+
+The completed answer is passed through a bounded local presentation adapter;
+there is no second model call just to create JSON. Valid GFM comparison tables,
+dated timelines, numbered steps, and Markdown checklists become a validated
+`presentation` object persisted with the assistant turn. Ambiguous or malformed
+content falls back to `standard` Markdown. Existing RAG structured generation
+continues to validate answer status and citation labels at the provider boundary.
+
+React renders comparison tables, timeline items, steps, and read-only checklists
+with accessible native elements. Model text remains plain text/Markdown: raw HTML
+and generated code are never executed, unsafe links are rejected, and citations
+remain outside the presentation object so claim provenance is not lost.

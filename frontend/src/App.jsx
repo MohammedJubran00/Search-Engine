@@ -40,6 +40,7 @@ function messagesFromServer(records) {
       researchPlan: Array.isArray(item.research_plan) ? item.research_plan : [],
       researchSummary: item.research_summary || null,
       evidenceConflicts: Array.isArray(item.evidence_conflicts) ? item.evidence_conflicts : [],
+      presentation: item.presentation || { type: 'standard' },
       attachments: Array.isArray(item.attachments) ? item.attachments : [],
     }))
 }
@@ -149,6 +150,7 @@ export default function App() {
             researchPlan: metadata.researchPlan,
             researchSummary: metadata.researchSummary,
             evidenceConflicts: metadata.evidenceConflicts,
+            presentation: metadata.presentation,
           })
         },
       })

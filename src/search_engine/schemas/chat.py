@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.search_engine.core.config import settings
+from src.search_engine.research.presentation import AnswerPresentation
 
 ChatMode = Literal["general", "documents"]
 ResearchMode = Literal["standard", "deep"]
@@ -136,6 +137,9 @@ class ChatResponse(BaseModel):
     research_plan: list[str] = Field(default_factory=list)
     research_summary: ResearchSummary | None = None
     evidence_conflicts: list[EvidenceRelationship] = Field(default_factory=list)
+    presentation: AnswerPresentation = Field(
+        default_factory=lambda: AnswerPresentation(type="standard")
+    )
 
 
 class ConversationMessageOut(BaseModel):
@@ -153,6 +157,9 @@ class ConversationMessageOut(BaseModel):
     research_plan: list[str] = Field(default_factory=list)
     research_summary: ResearchSummary | None = None
     evidence_conflicts: list[EvidenceRelationship] = Field(default_factory=list)
+    presentation: AnswerPresentation = Field(
+        default_factory=lambda: AnswerPresentation(type="standard")
+    )
     document_ids: list[uuid.UUID] = Field(default_factory=list)
     attachments: list[ChatAttachment] = Field(default_factory=list)
 

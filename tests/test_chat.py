@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from tests.auth_helpers import auth_headers, signup_and_login
 from src.search_engine.rag.answering import AnswerStatus, RagAnswerResult, SourceReference
 from src.search_engine.rag.generation import RagGenerationError
+from src.search_engine.main import AgentStreamMetadata
 from src.search_engine.services.retrieval_service import (
     RetrievalDocumentAccessError,
     RetrievalDocumentUnavailableError,
@@ -95,6 +96,32 @@ def test_chat_persists_for_the_authenticated_user(
     assert data["messages"][1]["content"] == "Paris"
 
 
+@patch("src.search_engine.api.graph_app.invoke")
+def test_general_chat_persists_only_tool_verified_web_citations(
+    mock_invoke,
+    client: TestClient,
+) -> None:
+    source = {
+        "origin": "web",
+        "title": "Official report",
+        "url": "https://example.com/report",
+        "evidence_excerpt": "Supporting evidence.",
+        "published_date": "2026-10-30",
+        "retrieved_at": "2026-10-31T10:00:00+00:00",
+    }
+    mock_invoke.return_value = {
+        "answer": "The report supports the claim.",
+        "web_sources": [source],
+    }
+    headers = auth_headers(client)
+    response = client.post("/chat", json={"query": "Research this"}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["web_citations"] == [source]
+    latest = client.get("/api/conversations/latest", headers=headers).json()
+    assert latest["messages"][1]["web_citations"] == [source]
+
+
 @patch("src.search_engine.api.graph_app.invoke", return_value={"answer": "secret-answer"})
 def test_user_cannot_use_another_users_conversation(
     mock_invoke,
@@ -160,6 +187,35 @@ def test_stream_persists_assistant_answer(mock_stream, client: TestClient) -> No
     data = latest.json()
     assert [item["role"] for item in data["messages"]] == ["user", "assistant"]
     assert data["messages"][1]["content"] == "Hello"
+
+
+@patch("src.search_engine.api.stream_agent")
+def test_stream_emits_and_persists_web_citation_metadata(
+    mock_stream,
+    client: TestClient,
+) -> None:
+    source = {
+        "origin": "web",
+        "title": "Source",
+        "url": "https://example.com/source",
+        "evidence_excerpt": "Evidence",
+        "published_date": None,
+        "retrieved_at": "2026-10-31T10:00:00+00:00",
+    }
+    mock_stream.return_value = iter(
+        ["Answer", AgentStreamMetadata((source,))]
+    )
+    headers = auth_headers(client)
+    response = client.post(
+        "/chat/stream",
+        json={"query": "Search"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert '"web_citations": [' in response.text
+    latest = client.get("/api/conversations/latest", headers=headers).json()
+    assert latest["messages"][1]["web_citations"][0]["url"] == source["url"]
 
 
 @patch("src.search_engine.api.graph_app.invoke")

@@ -36,7 +36,7 @@ from src.search_engine.database.database import get_db
 from src.search_engine.deps import get_current_user
 from src.search_engine.document_router import router as document_router
 from src.search_engine.main import app as graph_app  # عشان ما نخلطه مع: app = FastAPI() ( لا نستخدم نفس الاسم)
-from src.search_engine.main import stream_agent
+from src.search_engine.main import AgentStreamMetadata, stream_agent
 from src.search_engine.models.user import User
 from src.search_engine.schemas.chat import ChatRequest, ChatResponse
 from src.search_engine.services.chat_service import ChatService, ConversationNotFoundError
@@ -169,6 +169,18 @@ def citation_payload(source: SourceReference) -> dict:
         "filename": source.filename,
         "page_number": source.page_number,
         "evidence_excerpt": source.evidence_excerpt,
+    }
+
+
+def web_citation_payload(source: dict) -> dict:
+    """Copy only the normalized provenance fields returned by the search tool."""
+    return {
+        "origin": "web",
+        "title": source.get("title", "Web source"),
+        "url": source.get("url", ""),
+        "evidence_excerpt": source.get("evidence_excerpt", ""),
+        "published_date": source.get("published_date"),
+        "retrieved_at": source.get("retrieved_at"),
     }
 
 
@@ -351,17 +363,27 @@ async def chat(
             "The search engine returned an empty answer. Please try again.",
         )
 
+    web_citations = [
+        web_citation_payload(item)
+        for item in (result.get("web_sources", []) if isinstance(result, dict) else [])
+        if isinstance(item, dict)
+    ]
     try:
         await service.add_assistant_message(
             user_id=user.id,
             conversation_id=conversation.id,
             content=answer,
             mode="general",
+            web_citations=web_citations,
         )
     except ConversationNotFoundError:
         return error_response(404, _CONVERSATION_NOT_FOUND)
 
-    return ChatResponse(answer=answer, conversation_id=conversation.id)
+    return ChatResponse(
+        answer=answer,
+        conversation_id=conversation.id,
+        web_citations=web_citations,
+    )
 
 
 def sse_event(payload: dict) -> str:
@@ -474,11 +496,17 @@ async def chat_stream(
             iterator = stream_agent(thread_id, query, history=general_history)
             yielded = False
             answer = ""
+            web_citations: list[dict] = []
 
             while True:
                 delta = await asyncio.to_thread(next, iterator, _STREAM_END)
                 if delta is _STREAM_END:
                     break
+                if isinstance(delta, AgentStreamMetadata):
+                    web_citations = [
+                        web_citation_payload(item) for item in delta.web_sources
+                    ]
+                    continue
                 if not delta:
                     continue
                 yielded = True
@@ -499,11 +527,14 @@ async def chat_stream(
                     conversation_id=conversation_id,
                     content=answer,
                     mode="general",
+                    web_citations=web_citations,
                 )
             except ConversationNotFoundError:
                 yield sse_event({"error": _CONVERSATION_NOT_FOUND})
                 return
 
+            if web_citations:
+                yield sse_event({"mode": "general", "web_citations": web_citations})
             yield sse_event({"done": True, "conversation_id": str(conversation_id)})
         except Exception:
             logger.exception("Streaming chat failed for conversation_id=%s", conversation_id)

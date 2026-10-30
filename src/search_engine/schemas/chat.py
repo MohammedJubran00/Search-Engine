@@ -8,8 +8,9 @@ Responsibility: request/response shapes. No SQL, no JWT, no LangGraph.
 
 import uuid
 from typing import Literal
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.search_engine.core.config import settings
 
@@ -26,6 +27,26 @@ class ChatCitation(BaseModel):
     filename: str
     page_number: int | None = None
     evidence_excerpt: str
+    origin: Literal["document"] = "document"
+
+
+class WebCitation(BaseModel):
+    """Validated provenance returned by the web-search tool."""
+
+    origin: Literal["web"] = "web"
+    title: str
+    url: str
+    evidence_excerpt: str = ""
+    published_date: str | None = None
+    retrieved_at: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_public_url(cls, value: str) -> str:
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Web citation URL must use HTTP or HTTPS.")
+        return value
 
 
 class ChatAttachment(BaseModel):
@@ -66,6 +87,7 @@ class ChatResponse(BaseModel):
     mode: ChatMode = "general"
     status: AnswerStatusValue | None = None
     citations: list[ChatCitation] = Field(default_factory=list)
+    web_citations: list[WebCitation] = Field(default_factory=list)
 
 
 class ConversationMessageOut(BaseModel):
@@ -79,6 +101,7 @@ class ConversationMessageOut(BaseModel):
     mode: ChatMode = "general"
     status: AnswerStatusValue | None = None
     citations: list[ChatCitation] = Field(default_factory=list)
+    web_citations: list[WebCitation] = Field(default_factory=list)
     document_ids: list[uuid.UUID] = Field(default_factory=list)
     attachments: list[ChatAttachment] = Field(default_factory=list)
 

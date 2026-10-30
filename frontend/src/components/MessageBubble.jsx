@@ -144,6 +144,27 @@ export default function MessageBubble({ message }) {
           ) : null}
         </div>
       ) : null}
+      {!isUser && !message.isError && Array.isArray(message.webCitations) && message.webCitations.length ? (
+        <div className="message__web-sources">
+          <span className="message__mode">Web sources</span>
+          <ol aria-label="Web sources">
+            {message.webCitations.map((source) => (
+              <li key={source.url}>
+                <a href={source.url} target="_blank" rel="noopener noreferrer">
+                  {source.title}
+                </a>
+                {source.published_date ? <small>Published {source.published_date}</small> : null}
+                {source.evidence_excerpt ? (
+                  <details>
+                    <summary>View evidence excerpt</summary>
+                    <q>{source.evidence_excerpt}</q>
+                  </details>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
     </article>
   )
 }

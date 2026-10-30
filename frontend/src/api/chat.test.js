@@ -37,7 +37,15 @@ test('document SSE metadata preserves answerability and citations', () => {
       status: 'insufficient_evidence',
       citations,
     }),
-    { mode: 'documents', status: 'insufficient_evidence', citations },
+    { mode: 'documents', status: 'insufficient_evidence', citations, webCitations: [] },
   )
   assert.equal(readDocumentStreamMetadata({ delta: 'legacy general token' }), null)
+})
+
+test('general chat stream metadata preserves verified web sources', () => {
+  const webCitations = [{ title: 'Primary source', url: 'https://example.com/source' }]
+  assert.deepEqual(
+    readDocumentStreamMetadata({ mode: 'general', web_citations: webCitations }),
+    { mode: 'general', status: null, citations: [], webCitations },
+  )
 })

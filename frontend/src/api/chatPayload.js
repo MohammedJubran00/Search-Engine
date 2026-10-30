@@ -12,7 +12,8 @@ export function readDocumentStreamMetadata(payload, fallbackMode = 'general') {
   if (
     payload?.mode !== 'documents' &&
     typeof payload?.status !== 'string' &&
-    !Array.isArray(payload?.citations)
+    !Array.isArray(payload?.citations) &&
+    !Array.isArray(payload?.web_citations)
   ) {
     return null
   }
@@ -20,5 +21,6 @@ export function readDocumentStreamMetadata(payload, fallbackMode = 'general') {
     mode: payload.mode || fallbackMode,
     status: payload.status || null,
     citations: Array.isArray(payload.citations) ? payload.citations : [],
+    webCitations: Array.isArray(payload.web_citations) ? payload.web_citations : [],
   }
 }

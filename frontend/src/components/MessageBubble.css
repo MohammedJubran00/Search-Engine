@@ -144,6 +144,40 @@
 .message__citations summary { color: var(--accent); cursor: pointer; }
 .message__citations details q { display: block; margin-top: 5px; }
 
+.message__web-sources {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.message__web-sources ol {
+  display: grid;
+  gap: 7px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.message__web-sources li {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.message__web-sources a {
+  color: var(--accent);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.message__web-sources small { color: var(--text-faint); }
+.message__web-sources details { font-size: 0.78rem; }
+.message__web-sources summary { color: var(--text-muted); cursor: pointer; }
+.message__web-sources q { display: block; margin-top: 5px; color: var(--text-muted); }
+
 .message__markdown {
   font-family: var(--font-prose);
   font-size: 1.02rem;

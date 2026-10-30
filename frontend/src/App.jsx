@@ -36,6 +36,7 @@ function messagesFromServer(records) {
       mode: item.mode || 'general',
       status: item.status || null,
       citations: Array.isArray(item.citations) ? item.citations : [],
+      webCitations: Array.isArray(item.web_citations) ? item.web_citations : [],
       attachments: Array.isArray(item.attachments) ? item.attachments : [],
     }))
 }
@@ -139,6 +140,7 @@ export default function App() {
             mode: metadata.mode,
             status: metadata.status,
             citations: metadata.citations,
+            webCitations: metadata.webCitations,
           })
         },
       })

@@ -401,3 +401,17 @@ not process-local memory. Only recent General Chat turns are included, bounded
 deterministically by `GENERAL_CHAT_HISTORY_MAX_MESSAGES` and
 `GENERAL_CHAT_HISTORY_MAX_CHARACTERS`. Document Chat turns are excluded. No
 silent summarization or additional Gemini call is made.
+
+## Verified web citations and follow-up context
+
+General Chat keeps Tavily results as structured tool provenance: title, original
+HTTP(S) URL, bounded evidence excerpt, optional provider publication date, and
+the local retrieval timestamp. Unsafe schemes, malformed entries, and duplicate
+URLs are discarded. Only this structured tool output can become a displayed or
+persisted web citation; links invented in model prose are never promoted to the
+source list. Uploaded-document and web citations use distinct UI sections.
+
+The agent prompt treats web pages as untrusted evidence and tells the model to
+reuse sufficient persisted conversation context for referential follow-ups.
+A new search remains available when the evidence is missing or time-sensitive,
+but no separate classifier or routing model call was added.

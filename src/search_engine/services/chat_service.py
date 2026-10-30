@@ -40,6 +40,7 @@ class PersistedChatMessage:
     mode: Literal["general", "documents"] = "general"
     status: str | None = None
     citations: tuple[dict[str, Any], ...] = ()
+    web_citations: tuple[dict[str, Any], ...] = ()
     document_ids: tuple[uuid.UUID, ...] = ()
     attachments: tuple[dict[str, Any], ...] = ()
 
@@ -111,6 +112,7 @@ class ChatService:
         mode: Literal["general", "documents"] = "general",
         status: str | None = None,
         citations: Sequence[Mapping[str, Any]] = (),
+        web_citations: Sequence[Mapping[str, Any]] = (),
     ) -> None:
         """Store the assistant answer only if the conversation still belongs to the user."""
         conversation = await self._conversations.get_by_id_for_user(
@@ -127,6 +129,7 @@ class ChatService:
                 mode=mode,
                 status=status,
                 citations=citations,
+                web_citations=web_citations,
             ),
         )
         await self._conversations.mark_updated(conversation)
@@ -189,6 +192,7 @@ def _encode_message(
     mode: str,
     status: str | None = None,
     citations: Sequence[Mapping[str, Any]] = (),
+    web_citations: Sequence[Mapping[str, Any]] = (),
     document_ids: Sequence[uuid.UUID] = (),
     attachments: Sequence[Mapping[str, Any]] = (),
 ) -> str:
@@ -199,6 +203,7 @@ def _encode_message(
         "mode": mode,
         "status": status,
         "citations": [dict(item) for item in citations],
+        "web_citations": [dict(item) for item in web_citations],
         "document_ids": [str(item) for item in document_ids],
         "attachments": [dict(item) for item in attachments],
     }
@@ -223,6 +228,7 @@ def _decode_message(message: Message) -> PersistedChatMessage:
         mode = payload["mode"]
         status = payload.get("status")
         citations = payload.get("citations", [])
+        web_citations = payload.get("web_citations", [])
         document_ids = payload.get("document_ids", [])
         attachments = payload.get("attachments", [])
         if not isinstance(content, str) or mode not in _CHAT_MODES:
@@ -235,6 +241,10 @@ def _decode_message(message: Message) -> PersistedChatMessage:
             raise ValueError
         if not isinstance(attachments, list) or not all(
             isinstance(item, dict) for item in attachments
+        ):
+            raise ValueError
+        if not isinstance(web_citations, list) or not all(
+            isinstance(item, dict) for item in web_citations
         ):
             raise ValueError
         parsed_document_ids = tuple(uuid.UUID(item) for item in document_ids)
@@ -252,6 +262,7 @@ def _decode_message(message: Message) -> PersistedChatMessage:
         mode=mode,
         status=status,
         citations=tuple(citations),
+        web_citations=tuple(web_citations),
         document_ids=parsed_document_ids,
         attachments=tuple(attachments),
     )

@@ -338,6 +338,7 @@ async def chat(
                 "session_id": thread_id,
                 "query": query,
                 "history": general_history,
+                "research_mode": request.research_mode,
             },
         )
     except Exception:
@@ -368,6 +369,11 @@ async def chat(
         for item in (result.get("web_sources", []) if isinstance(result, dict) else [])
         if isinstance(item, dict)
     ]
+    research_plan = [
+        item
+        for item in (result.get("research_plan", []) if isinstance(result, dict) else [])
+        if isinstance(item, str)
+    ]
     try:
         await service.add_assistant_message(
             user_id=user.id,
@@ -375,6 +381,7 @@ async def chat(
             content=answer,
             mode="general",
             web_citations=web_citations,
+            research_plan=research_plan,
         )
     except ConversationNotFoundError:
         return error_response(404, _CONVERSATION_NOT_FOUND)
@@ -383,6 +390,7 @@ async def chat(
         answer=answer,
         conversation_id=conversation.id,
         web_citations=web_citations,
+        research_plan=research_plan,
     )
 
 
@@ -493,10 +501,16 @@ async def chat_stream(
     async def generate():
         try:
             yield sse_event({"conversation_id": str(conversation_id)})
-            iterator = stream_agent(thread_id, query, history=general_history)
+            iterator = stream_agent(
+                thread_id,
+                query,
+                history=general_history,
+                research_mode=request.research_mode,
+            )
             yielded = False
             answer = ""
             web_citations: list[dict] = []
+            research_plan: list[str] = []
 
             while True:
                 delta = await asyncio.to_thread(next, iterator, _STREAM_END)
@@ -506,6 +520,7 @@ async def chat_stream(
                     web_citations = [
                         web_citation_payload(item) for item in delta.web_sources
                     ]
+                    research_plan = list(delta.research_plan)
                     continue
                 if not delta:
                     continue
@@ -528,13 +543,20 @@ async def chat_stream(
                     content=answer,
                     mode="general",
                     web_citations=web_citations,
+                    research_plan=research_plan,
                 )
             except ConversationNotFoundError:
                 yield sse_event({"error": _CONVERSATION_NOT_FOUND})
                 return
 
-            if web_citations:
-                yield sse_event({"mode": "general", "web_citations": web_citations})
+            if web_citations or research_plan:
+                yield sse_event(
+                    {
+                        "mode": "general",
+                        "web_citations": web_citations,
+                        "research_plan": research_plan,
+                    }
+                )
             yield sse_event({"done": True, "conversation_id": str(conversation_id)})
         except Exception:
             logger.exception("Streaming chat failed for conversation_id=%s", conversation_id)

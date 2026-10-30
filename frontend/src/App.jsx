@@ -37,6 +37,7 @@ function messagesFromServer(records) {
       status: item.status || null,
       citations: Array.isArray(item.citations) ? item.citations : [],
       webCitations: Array.isArray(item.web_citations) ? item.web_citations : [],
+      researchPlan: Array.isArray(item.research_plan) ? item.research_plan : [],
       attachments: Array.isArray(item.attachments) ? item.attachments : [],
     }))
 }
@@ -46,6 +47,7 @@ export default function App() {
   const [conversationId, setConversationId] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [chatMode, setChatMode] = useState('general')
+  const [researchMode, setResearchMode] = useState('standard')
   const [documents, setDocuments] = useState([])
   const [selectedDocumentIds, setSelectedDocumentIds] = useState([])
   const isLoadingRef = useRef(false)
@@ -131,6 +133,7 @@ export default function App() {
         conversationId: conversationIdRef.current,
         mode: requestMode,
         documentIds: requestDocumentIds,
+        researchMode,
         onConversationId: (id) => {
           conversationIdRef.current = id
           setConversationId(id)
@@ -141,6 +144,7 @@ export default function App() {
             status: metadata.status,
             citations: metadata.citations,
             webCitations: metadata.webCitations,
+            researchPlan: metadata.researchPlan,
           })
         },
       })
@@ -159,10 +163,11 @@ export default function App() {
       isLoadingRef.current = false
       setIsLoading(false)
     }
-  }, [chatMode, documents, selectedDocumentIds])
+  }, [chatMode, documents, researchMode, selectedDocumentIds])
 
   const handleModeChange = useCallback((nextMode) => {
     setChatMode(nextMode)
+    if (nextMode === 'documents') setResearchMode('standard')
     if (nextMode === 'general') setSelectedDocumentIds([])
   }, [])
 
@@ -193,8 +198,10 @@ export default function App() {
         />
         <ChatModeSelector
           mode={chatMode}
+          researchMode={researchMode}
           selectedCount={selectedDocumentIds.length}
           onChange={handleModeChange}
+          onResearchModeChange={setResearchMode}
           disabled={isLoading}
         />
         <ChatWindow

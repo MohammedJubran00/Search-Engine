@@ -1,6 +1,11 @@
 export function buildChatPayload(query, options = {}) {
-  const { conversationId, mode = 'general', documentIds = [] } = options
-  const body = { query, mode }
+  const {
+    conversationId,
+    mode = 'general',
+    documentIds = [],
+    researchMode = 'standard',
+  } = options
+  const body = { query, mode, research_mode: mode === 'general' ? researchMode : 'standard' }
   if (conversationId) body.conversation_id = conversationId
   if (mode === 'documents' && documentIds.length) {
     body.document_ids = [...new Set(documentIds)]
@@ -22,5 +27,6 @@ export function readDocumentStreamMetadata(payload, fallbackMode = 'general') {
     status: payload.status || null,
     citations: Array.isArray(payload.citations) ? payload.citations : [],
     webCitations: Array.isArray(payload.web_citations) ? payload.web_citations : [],
+    researchPlan: Array.isArray(payload.research_plan) ? payload.research_plan : [],
   }
 }

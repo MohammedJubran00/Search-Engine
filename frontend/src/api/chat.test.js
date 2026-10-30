@@ -9,7 +9,7 @@ test('general chat never carries document context', () => {
       mode: 'general',
       documentIds: ['private-document'],
     }),
-    { query: 'hello', mode: 'general' },
+    { query: 'hello', mode: 'general', research_mode: 'standard' },
   )
 })
 
@@ -18,11 +18,13 @@ test('document chat sends a deduplicated explicit selection', () => {
     buildChatPayload('summarize', {
       conversationId: 'conversation',
       mode: 'documents',
+      research_mode: 'standard',
       documentIds: ['one', 'one', 'two'],
     }),
     {
       query: 'summarize',
       mode: 'documents',
+      research_mode: 'standard',
       conversation_id: 'conversation',
       document_ids: ['one', 'two'],
     },
@@ -37,7 +39,13 @@ test('document SSE metadata preserves answerability and citations', () => {
       status: 'insufficient_evidence',
       citations,
     }),
-    { mode: 'documents', status: 'insufficient_evidence', citations, webCitations: [] },
+    {
+      mode: 'documents',
+      status: 'insufficient_evidence',
+      citations,
+      webCitations: [],
+      researchPlan: [],
+    },
   )
   assert.equal(readDocumentStreamMetadata({ delta: 'legacy general token' }), null)
 })
@@ -46,6 +54,23 @@ test('general chat stream metadata preserves verified web sources', () => {
   const webCitations = [{ title: 'Primary source', url: 'https://example.com/source' }]
   assert.deepEqual(
     readDocumentStreamMetadata({ mode: 'general', web_citations: webCitations }),
-    { mode: 'general', status: null, citations: [], webCitations },
+    {
+      mode: 'general',
+      status: null,
+      citations: [],
+      webCitations,
+      researchPlan: [],
+    },
+  )
+})
+
+test('deep research is explicit and never leaks into document mode', () => {
+  assert.equal(
+    buildChatPayload('compare', { mode: 'general', researchMode: 'deep' }).research_mode,
+    'deep',
+  )
+  assert.equal(
+    buildChatPayload('compare', { mode: 'documents', researchMode: 'deep' }).research_mode,
+    'standard',
   )
 })

@@ -415,3 +415,14 @@ The agent prompt treats web pages as untrusted evidence and tells the model to
 reuse sufficient persisted conversation context for referential follow-ups.
 A new search remains available when the evidence is missing or time-sensitive,
 but no separate classifier or routing model call was added.
+
+## Opt-in query planning
+
+General Chat exposes an explicit **Deep Research** mode. Standard questions
+continue directly to the existing agent with no planning call. Deep Research
+enters a typed LangGraph planner node that produces at most
+`RESEARCH_MAX_SUBQUESTIONS`, removes duplicates, preserves the original
+question, and passes the visible plan to the search-capable agent for one
+synthesis. Planner failure degrades to the original question instead of
+breaking the chat. The plan is persisted with the assistant turn and restored
+after reload. Document Chat never enters this graph.

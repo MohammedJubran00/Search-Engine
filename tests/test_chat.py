@@ -169,7 +169,7 @@ def test_unknown_conversation_is_not_found(mock_invoke, client: TestClient) -> N
 
 @patch(
     "src.search_engine.api.stream_agent",
-    side_effect=lambda session_id, query, history=None: iter(["Hel", "lo"]),
+    side_effect=lambda session_id, query, history=None, research_mode="standard": iter(["Hel", "lo"]),
 )
 def test_stream_persists_assistant_answer(mock_stream, client: TestClient) -> None:
     headers = auth_headers(client)
@@ -249,6 +249,41 @@ def test_general_follow_up_uses_bounded_persisted_history(
         ("user", "Who was the first programmer?"),
         ("assistant", "Ada Lovelace."),
     ]
+
+
+@patch("src.search_engine.api.graph_app.invoke")
+def test_deep_research_is_explicit_and_plan_survives_reload(
+    mock_invoke,
+    client: TestClient,
+) -> None:
+    mock_invoke.return_value = {
+        "answer": "Comparison",
+        "research_plan": ["Compare features", "Compare costs"],
+    }
+    headers = auth_headers(client)
+    response = client.post(
+        "/chat",
+        json={"query": "Compare A and B", "research_mode": "deep"},
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert mock_invoke.call_args.args[0]["research_mode"] == "deep"
+    assert response.json()["research_plan"] == ["Compare features", "Compare costs"]
+    latest = client.get("/api/conversations/latest", headers=headers).json()
+    assert latest["messages"][1]["research_plan"] == [
+        "Compare features",
+        "Compare costs",
+    ]
+
+
+def test_document_chat_rejects_deep_research(client: TestClient) -> None:
+    response = client.post(
+        "/chat",
+        json={"query": "question", "mode": "documents", "research_mode": "deep"},
+        headers=auth_headers(client),
+    )
+    assert response.status_code == 400
 
 
 @patch("src.search_engine.api.resolve_chat_attachments", new_callable=AsyncMock)

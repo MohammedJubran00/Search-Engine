@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     rag_full_context_max_chunks: int = 64
     general_chat_history_max_messages: int = 12
     general_chat_history_max_characters: int = 12_000
+    research_max_subquestions: int = 4
 
     def _postgres_url(self, driver: str) -> str:
         password = quote_plus(self.db_password)

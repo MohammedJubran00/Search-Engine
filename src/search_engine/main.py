@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urlparse
+from typing import TypedDict
 
 
 from dotenv import load_dotenv
@@ -15,6 +16,9 @@ from langchain_tavily import TavilySearch
 from langgraph.graph import  StateGraph, END
 from langchain_core.messages import AIMessageChunk
 from langchain_core.messages import ToolMessage
+from pydantic import BaseModel, Field
+
+from src.search_engine.core.config import settings
 
 
 load_dotenv()
@@ -126,6 +130,81 @@ def extract_web_sources(messages) -> list[dict[str, str | None]]:
 @dataclass(frozen=True, slots=True)
 class AgentStreamMetadata:
     web_sources: tuple[dict[str, str | None], ...]
+    research_plan: tuple[str, ...] = ()
+
+
+class PlannerOutput(BaseModel):
+    """Typed result from the optional Deep Research planning call."""
+
+    subquestions: list[str] = Field(
+        min_length=1,
+        max_length=settings.research_max_subquestions,
+    )
+
+
+class ResearchState(TypedDict, total=False):
+    session_id: str
+    query: str
+    history: list[tuple[str, str]]
+    research_mode: str
+    research_plan: list[str]
+    planning_failed: bool
+    answer: object
+    web_sources: list[dict[str, str | None]]
+
+
+planner_model = llm.with_structured_output(PlannerOutput)
+
+
+def planner_node(state: ResearchState) -> ResearchState:
+    """Create a bounded plan only for an explicitly requested deep-research turn."""
+    question = str(state.get("query", "")).strip()
+    try:
+        output = planner_model.invoke(
+            "Break this research question into distinct, non-overlapping subquestions. "
+            f"Return at most {settings.research_max_subquestions}. Preserve the original "
+            f"scope and assumptions. Question: {question}"
+        )
+        raw = output.subquestions if isinstance(output, PlannerOutput) else []
+        plan = _clean_research_plan(raw)
+        if not plan:
+            raise ValueError("Planner returned no usable subquestions.")
+        return {**state, "research_plan": plan, "planning_failed": False}
+    except Exception:
+        logger.exception("Deep Research planning failed")
+        return {
+            **state,
+            "research_plan": [question] if question else [],
+            "planning_failed": True,
+        }
+
+
+def _clean_research_plan(items) -> list[str]:
+    plan: list[str] = []
+    seen: set[str] = set()
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, str):
+            continue
+        clean = " ".join(item.split()).strip()
+        fingerprint = clean.casefold()
+        if not clean or fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        plan.append(clean[:500])
+        if len(plan) == settings.research_max_subquestions:
+            break
+    return plan
+
+
+def _planned_query(question: str, plan: list[str]) -> str:
+    if not plan:
+        return question
+    numbered = "\n".join(f"{index}. {item}" for index, item in enumerate(plan, 1))
+    return (
+        f"Original question: {question}\n\n"
+        "Deep Research plan (use only necessary, non-duplicate searches):\n"
+        f"{numbered}\n\nSynthesize one answer to the original question."
+    )
 
 
 agent = create_react_agent(
@@ -172,7 +251,8 @@ def agent_node(state): #for chat history and session id
     # Copy history first so a failed Gemini/LangGraph call cannot leave a
     # half-written turn in sessions[session_id].
     session_id = state.get("session_id")
-    query = state.get("query")
+    query = str(state.get("query", ""))
+    agent_query = _planned_query(query, state.get("research_plan", []))
     provided_history = state.get("history")
     chat_history = list(
         provided_history if provided_history is not None else sessions.get(session_id, [])
@@ -181,7 +261,7 @@ def agent_node(state): #for chat history and session id
 
     try:
         chat_history.append(
-            ("human", query)
+            ("human", agent_query)
         )
         # Protect the model call: Gemini errors, tool crashes, or an empty
         # agent payload should be logged and re-raised for the API layer.
@@ -230,11 +310,20 @@ def _delta_text(content) -> str:
     return ""
 
 
-def stream_agent(session_id: str, query: str, history=None):
+def stream_agent(
+    session_id: str,
+    query: str,
+    history=None,
+    research_mode: str = "standard",
+):
     # Same session memory as agent_node, but yields Gemini tokens as they
     # arrive instead of waiting for the full invoke() result.
+    plan: list[str] = []
+    if research_mode == "deep":
+        planned = planner_node({"query": query, "research_mode": research_mode})
+        plan = planned.get("research_plan", [])
     chat_history = list(history if history is not None else sessions.get(session_id, []))
-    chat_history.append(("human", query))
+    chat_history.append(("human", _planned_query(query, plan)))
     full_answer = []
     web_sources: list[dict[str, str | None]] = []
 
@@ -264,9 +353,9 @@ def stream_agent(session_id: str, query: str, history=None):
         chat_history.append(("assistant", answer))
         if history is None:
             sessions[session_id] = chat_history
-        if web_sources:
+        if web_sources or plan:
             deduplicated = {item["url"]: item for item in web_sources if item.get("url")}
-            yield AgentStreamMetadata(tuple(deduplicated.values()))
+            yield AgentStreamMetadata(tuple(deduplicated.values()), tuple(plan))
     except Exception:
         logger.exception(
             "LangGraph stream_agent failed for session_id=%r",
@@ -275,10 +364,22 @@ def stream_agent(session_id: str, query: str, history=None):
         raise
 
 
-graph=StateGraph(dict)
+def route_research(state: ResearchState) -> str:
+    return "planner" if state.get("research_mode") == "deep" else "agent"
 
+
+graph = StateGraph(ResearchState)
+
+graph.add_node("route", lambda state: state)
+graph.add_node("planner", planner_node)
 graph.add_node("agent", agent_node)
-graph.set_entry_point("agent")
+graph.set_entry_point("route")
+graph.add_conditional_edges(
+    "route",
+    route_research,
+    {"planner": "planner", "agent": "agent"},
+)
+graph.add_edge("planner", "agent")
 graph.add_edge("agent", END)
 app=graph.compile()
 

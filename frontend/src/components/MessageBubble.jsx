@@ -165,6 +165,14 @@ export default function MessageBubble({ message }) {
           </ol>
         </div>
       ) : null}
+      {!isUser && !message.isError && Array.isArray(message.researchPlan) && message.researchPlan.length ? (
+        <details className="message__research-plan">
+          <summary>Research plan</summary>
+          <ol>
+            {message.researchPlan.map((step) => <li key={step}>{step}</li>)}
+          </ol>
+        </details>
+      ) : null}
     </article>
   )
 }

@@ -52,7 +52,14 @@ function parseSseBlock(block) {
 }
 
 export async function streamChatQuery(query, onDelta, options = {}) {
-  const { conversationId, onConversationId, onMetadata, mode, documentIds } = options
+  const {
+    conversationId,
+    onConversationId,
+    onMetadata,
+    mode,
+    documentIds,
+    researchMode,
+  } = options
   let response
 
   try {
@@ -63,7 +70,7 @@ export async function streamChatQuery(query, onDelta, options = {}) {
         Accept: 'text/event-stream',
       },
       body: JSON.stringify(
-        buildChatPayload(query, { conversationId, mode, documentIds }),
+        buildChatPayload(query, { conversationId, mode, documentIds, researchMode }),
       ),
     })
   } catch {

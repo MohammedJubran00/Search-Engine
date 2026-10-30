@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from src.search_engine.core.config import settings
 
 ChatMode = Literal["general", "documents"]
+ResearchMode = Literal["standard", "deep"]
 AnswerStatusValue = Literal["answered", "insufficient_evidence"]
 
 
@@ -66,6 +67,7 @@ class ChatRequest(BaseModel):
     query: str
     conversation_id: uuid.UUID | None = None
     mode: ChatMode = "general"
+    research_mode: ResearchMode = "standard"
     document_ids: list[uuid.UUID] = Field(
         default_factory=list,
         max_length=settings.rag_chat_max_document_selection,
@@ -76,6 +78,8 @@ class ChatRequest(BaseModel):
         self.document_ids = list(dict.fromkeys(self.document_ids))
         if self.mode == "general" and self.document_ids:
             raise ValueError("document_ids may only be used in documents mode")
+        if self.mode == "documents" and self.research_mode != "standard":
+            raise ValueError("deep research is available only in general mode")
         return self
 
 
@@ -88,6 +92,7 @@ class ChatResponse(BaseModel):
     status: AnswerStatusValue | None = None
     citations: list[ChatCitation] = Field(default_factory=list)
     web_citations: list[WebCitation] = Field(default_factory=list)
+    research_plan: list[str] = Field(default_factory=list)
 
 
 class ConversationMessageOut(BaseModel):
@@ -102,6 +107,7 @@ class ConversationMessageOut(BaseModel):
     status: AnswerStatusValue | None = None
     citations: list[ChatCitation] = Field(default_factory=list)
     web_citations: list[WebCitation] = Field(default_factory=list)
+    research_plan: list[str] = Field(default_factory=list)
     document_ids: list[uuid.UUID] = Field(default_factory=list)
     attachments: list[ChatAttachment] = Field(default_factory=list)
 

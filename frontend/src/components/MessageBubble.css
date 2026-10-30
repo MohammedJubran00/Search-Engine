@@ -194,6 +194,23 @@
   text-transform: capitalize;
 }
 
+.message__conflicts {
+  display: grid;
+  gap: 6px;
+  padding: 9px 10px;
+  margin-top: 9px;
+  color: var(--text-muted);
+  background: rgba(251, 191, 36, 0.06);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: 10px;
+  font-size: 0.78rem;
+}
+
+.message__conflicts summary { color: #fbbf24; cursor: pointer; text-transform: capitalize; }
+.message__conflicts p { margin: 5px 0; }
+.message__conflicts ul { margin: 5px 0 0; padding-left: 18px; }
+.message__conflicts a { color: var(--accent); }
+
 .message__markdown {
   font-family: var(--font-prose);
   font-size: 1.02rem;

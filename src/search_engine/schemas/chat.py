@@ -19,6 +19,13 @@ ResearchMode = Literal["standard", "deep"]
 AnswerStatusValue = Literal["answered", "insufficient_evidence"]
 
 
+def _require_http_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Web citation URL must use HTTP or HTTPS.")
+    return value
+
+
 class ChatCitation(BaseModel):
     """Validated source attribution safe to return to the authenticated user."""
 
@@ -40,20 +47,48 @@ class WebCitation(BaseModel):
     evidence_excerpt: str = ""
     published_date: str | None = None
     retrieved_at: str | None = None
+    publisher: str | None = None
+    author: str | None = None
+    source_type: str = "unspecified"
+    quality_notes: list[str] = Field(default_factory=list)
 
     @field_validator("url")
     @classmethod
     def validate_public_url(cls, value: str) -> str:
-        parsed = urlparse(value)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("Web citation URL must use HTTP or HTTPS.")
-        return value
+        return _require_http_url(value)
 
 
 class ResearchSummary(BaseModel):
     search_count: int = Field(ge=0)
     search_failures: int = Field(ge=0)
     termination_reason: str
+
+
+class EvidenceClaim(BaseModel):
+    value: str
+    currency: str | None = None
+    unit: str | None = None
+    years: list[str] = Field(default_factory=list)
+    source_title: str | None = None
+    source_url: str
+    evidence_excerpt: str
+
+    @field_validator("source_url")
+    @classmethod
+    def validate_source_url(cls, value: str) -> str:
+        return _require_http_url(value)
+
+
+class EvidenceRelationship(BaseModel):
+    status: Literal[
+        "confirmed_agreement",
+        "potential_conflict",
+        "different_time_periods",
+        "insufficient_context",
+    ]
+    reason: str
+    shared_context_terms: list[str] = Field(default_factory=list)
+    claims: list[EvidenceClaim] = Field(min_length=2, max_length=2)
 
 
 class ChatAttachment(BaseModel):
@@ -100,6 +135,7 @@ class ChatResponse(BaseModel):
     web_citations: list[WebCitation] = Field(default_factory=list)
     research_plan: list[str] = Field(default_factory=list)
     research_summary: ResearchSummary | None = None
+    evidence_conflicts: list[EvidenceRelationship] = Field(default_factory=list)
 
 
 class ConversationMessageOut(BaseModel):
@@ -116,6 +152,7 @@ class ConversationMessageOut(BaseModel):
     web_citations: list[WebCitation] = Field(default_factory=list)
     research_plan: list[str] = Field(default_factory=list)
     research_summary: ResearchSummary | None = None
+    evidence_conflicts: list[EvidenceRelationship] = Field(default_factory=list)
     document_ids: list[uuid.UUID] = Field(default_factory=list)
     attachments: list[ChatAttachment] = Field(default_factory=list)
 

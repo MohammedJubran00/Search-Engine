@@ -32,5 +32,8 @@ export function readDocumentStreamMetadata(payload, fallbackMode = 'general') {
       payload.research_summary && typeof payload.research_summary === 'object'
         ? payload.research_summary
         : null,
+    evidenceConflicts: Array.isArray(payload.evidence_conflicts)
+      ? payload.evidence_conflicts
+      : [],
   }
 }

@@ -108,18 +108,50 @@ def test_general_chat_persists_only_tool_verified_web_citations(
         "evidence_excerpt": "Supporting evidence.",
         "published_date": "2026-10-30",
         "retrieved_at": "2026-10-31T10:00:00+00:00",
+        "publisher": "example.com",
+        "author": None,
+        "source_type": "unspecified",
+        "quality_notes": ["Direct evidence excerpt is available."],
+    }
+    conflict = {
+        "status": "potential_conflict",
+        "reason": "Comparable claims differ.",
+        "shared_context_terms": ["funding", "round"],
+        "claims": [
+            {
+                "value": "50",
+                "currency": "USD",
+                "unit": "million",
+                "years": ["2026"],
+                "source_title": "Official report",
+                "source_url": "https://example.com/report",
+                "evidence_excerpt": "Funding was $50 million.",
+            },
+            {
+                "value": "80",
+                "currency": "USD",
+                "unit": "million",
+                "years": ["2026"],
+                "source_title": "Second report",
+                "source_url": "https://other.example/report",
+                "evidence_excerpt": "Funding was $80 million.",
+            },
+        ],
     }
     mock_invoke.return_value = {
         "answer": "The report supports the claim.",
         "web_sources": [source],
+        "evidence_conflicts": [conflict],
     }
     headers = auth_headers(client)
     response = client.post("/chat", json={"query": "Research this"}, headers=headers)
 
     assert response.status_code == 200
     assert response.json()["web_citations"] == [source]
+    assert response.json()["evidence_conflicts"][0]["status"] == "potential_conflict"
     latest = client.get("/api/conversations/latest", headers=headers).json()
     assert latest["messages"][1]["web_citations"] == [source]
+    assert latest["messages"][1]["evidence_conflicts"][0]["claims"][1]["value"] == "80"
 
 
 @patch("src.search_engine.api.graph_app.invoke", return_value={"answer": "secret-answer"})

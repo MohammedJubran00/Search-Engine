@@ -442,3 +442,20 @@ Assistant metadata records actual search calls, partial failures, and the
 termination reason. The UI displays this summary and keeps Deep Research
 visibly opt-in. SSE cancellation propagates out of the response generator;
 provider request timeouts and the outer deadline bound any in-flight call.
+
+## Source quality and evidence relationships
+
+Web citations now expose transparent signals rather than a universal
+credibility score: publisher domain, provider-supplied author/source type when
+available, publication-date availability, direct-excerpt availability, query
+term overlap, and the number of distinct publishers in the result set. These
+signals never declare a famous, government, or academic domain automatically
+correct, and multiple domains are explicitly not treated as proof of
+corroboration.
+
+A deterministic evidence processor compares numeric claims only when currency,
+unit, and surrounding subject/event terms are compatible. It reports confirmed
+agreement, potential conflict, or different explicit time periods and shows
+both source claims without inventing a resolution. Weak-context and mismatched-
+unit pairs are left unclassified. No additional Gemini verification call is
+enabled.

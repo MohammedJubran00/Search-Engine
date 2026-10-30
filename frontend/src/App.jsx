@@ -39,6 +39,7 @@ function messagesFromServer(records) {
       webCitations: Array.isArray(item.web_citations) ? item.web_citations : [],
       researchPlan: Array.isArray(item.research_plan) ? item.research_plan : [],
       researchSummary: item.research_summary || null,
+      evidenceConflicts: Array.isArray(item.evidence_conflicts) ? item.evidence_conflicts : [],
       attachments: Array.isArray(item.attachments) ? item.attachments : [],
     }))
 }
@@ -147,6 +148,7 @@ export default function App() {
             webCitations: metadata.webCitations,
             researchPlan: metadata.researchPlan,
             researchSummary: metadata.researchSummary,
+            evidenceConflicts: metadata.evidenceConflicts,
           })
         },
       })

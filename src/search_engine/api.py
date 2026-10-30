@@ -183,6 +183,10 @@ def web_citation_payload(source: dict) -> dict:
         "evidence_excerpt": source.get("evidence_excerpt", ""),
         "published_date": source.get("published_date"),
         "retrieved_at": source.get("retrieved_at"),
+        "publisher": source.get("publisher"),
+        "author": source.get("author"),
+        "source_type": source.get("source_type", "unspecified"),
+        "quality_notes": source.get("quality_notes", []),
     }
 
 
@@ -391,6 +395,13 @@ async def chat(
         if isinstance(result, dict) and isinstance(result.get("research_summary"), dict)
         else None
     )
+    evidence_conflicts = [
+        item
+        for item in (
+            result.get("evidence_conflicts", []) if isinstance(result, dict) else []
+        )
+        if isinstance(item, dict)
+    ]
     try:
         await service.add_assistant_message(
             user_id=user.id,
@@ -400,6 +411,7 @@ async def chat(
             web_citations=web_citations,
             research_plan=research_plan,
             research_summary=research_summary,
+            evidence_conflicts=evidence_conflicts,
         )
     except ConversationNotFoundError:
         return error_response(404, _CONVERSATION_NOT_FOUND)
@@ -410,6 +422,7 @@ async def chat(
         web_citations=web_citations,
         research_plan=research_plan,
         research_summary=research_summary,
+        evidence_conflicts=evidence_conflicts,
     )
 
 
@@ -531,6 +544,7 @@ async def chat_stream(
             web_citations: list[dict] = []
             research_plan: list[str] = []
             research_summary: dict | None = None
+            evidence_conflicts: list[dict] = []
             research_deadline = (
                 asyncio.get_running_loop().time() + settings.research_max_execution_seconds
             )
@@ -557,6 +571,7 @@ async def chat_stream(
                     ]
                     research_plan = list(delta.research_plan)
                     research_summary = delta.research_summary
+                    evidence_conflicts = list(delta.evidence_conflicts)
                     continue
                 if not delta:
                     continue
@@ -581,6 +596,7 @@ async def chat_stream(
                     web_citations=web_citations,
                     research_plan=research_plan,
                     research_summary=research_summary,
+                    evidence_conflicts=evidence_conflicts,
                 )
             except ConversationNotFoundError:
                 yield sse_event({"error": _CONVERSATION_NOT_FOUND})
@@ -593,6 +609,7 @@ async def chat_stream(
                         "web_citations": web_citations,
                         "research_plan": research_plan,
                         "research_summary": research_summary,
+                        "evidence_conflicts": evidence_conflicts,
                     }
                 )
             yield sse_event({"done": True, "conversation_id": str(conversation_id)})

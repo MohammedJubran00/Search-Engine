@@ -153,11 +153,20 @@ export default function MessageBubble({ message }) {
                 <a href={source.url} target="_blank" rel="noopener noreferrer">
                   {source.title}
                 </a>
+                <small>
+                  {source.publisher || 'Publisher unavailable'} · {source.source_type || 'unspecified source type'}
+                </small>
                 {source.published_date ? <small>Published {source.published_date}</small> : null}
                 {source.evidence_excerpt ? (
                   <details>
                     <summary>View evidence excerpt</summary>
                     <q>{source.evidence_excerpt}</q>
+                  </details>
+                ) : null}
+                {Array.isArray(source.quality_notes) && source.quality_notes.length ? (
+                  <details>
+                    <summary>Source quality notes</summary>
+                    <ul>{source.quality_notes.map((note) => <li key={note}>{note}</li>)}</ul>
                   </details>
                 ) : null}
               </li>
@@ -181,6 +190,28 @@ export default function MessageBubble({ message }) {
             ? ` · ${message.researchSummary.search_failures} failed`
             : ''}
         </p>
+      ) : null}
+      {!isUser && !message.isError && Array.isArray(message.evidenceConflicts) && message.evidenceConflicts.length ? (
+        <section className="message__conflicts" aria-label="Evidence comparison">
+          <strong>Evidence comparison</strong>
+          {message.evidenceConflicts.map((relationship, index) => (
+            <details key={`${relationship.status}-${index}`}>
+              <summary>{relationship.status.replaceAll('_', ' ')}</summary>
+              <p>{relationship.reason}</p>
+              <ul>
+                {relationship.claims.map((claim) => (
+                  <li key={`${claim.source_url}-${claim.value}`}>
+                    <a href={claim.source_url} target="_blank" rel="noopener noreferrer">
+                      {claim.source_title || claim.source_url}
+                    </a>
+                    : {claim.currency ? `${claim.currency} ` : ''}{claim.value}{claim.unit ? ` ${claim.unit}` : ''}
+                    {claim.years?.length ? ` (${claim.years.join(', ')})` : ''}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ))}
+        </section>
       ) : null}
     </article>
   )

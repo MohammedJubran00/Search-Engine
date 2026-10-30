@@ -21,6 +21,10 @@ from langchain_core.messages import ToolMessage
 from pydantic import BaseModel, Field
 
 from src.search_engine.core.config import settings
+from src.search_engine.research.evidence import (
+    add_source_quality_signals,
+    detect_numeric_claim_relationships,
+)
 
 
 load_dotenv()
@@ -101,7 +105,7 @@ def web_search(query:str):
     budget.search_count += 1
     try:
         result = tavily.invoke(query)
-        results = normalize_web_results(result.get("results", []))
+        results = normalize_web_results(result.get("results", []), query=query)
         if not results:
             output = "No search results were found for this query."
             budget.cache[normalized_query] = output
@@ -119,10 +123,10 @@ def web_search(query:str):
         return "Web search is currently unavailable. Tell the user the search failed."
 
 
-def normalize_web_results(items) -> list[dict[str, str | None]]:
+def normalize_web_results(items, *, query: str = "") -> list[dict]:
     """Keep only bounded, display-safe provenance returned by Tavily."""
     retrieved_at = datetime.now(timezone.utc).isoformat()
-    results: list[dict[str, str | None]] = []
+    results: list[dict] = []
     seen_urls: set[str] = set()
     for item in items if isinstance(items, list) else []:
         if not isinstance(item, dict):
@@ -156,11 +160,22 @@ def normalize_web_results(items) -> list[dict[str, str | None]]:
                     else None
                 ),
                 "retrieved_at": retrieved_at,
+                "author": (
+                    item.get("author").strip()[:200]
+                    if isinstance(item.get("author"), str) and item.get("author").strip()
+                    else None
+                ),
+                "source_type": (
+                    item.get("source_type").strip()[:100]
+                    if isinstance(item.get("source_type"), str)
+                    and item.get("source_type").strip()
+                    else "unspecified"
+                ),
             }
         )
         if len(results) == 5:
             break
-    return results
+    return add_source_quality_signals(results, query=query)
 
 
 def extract_web_sources(messages) -> list[dict[str, str | None]]:
@@ -198,6 +213,7 @@ class AgentStreamMetadata:
     web_sources: tuple[dict[str, str | None], ...]
     research_plan: tuple[str, ...] = ()
     research_summary: dict[str, int | str] | None = None
+    evidence_conflicts: tuple[dict, ...] = ()
 
 
 class PlannerOutput(BaseModel):
@@ -219,6 +235,7 @@ class ResearchState(TypedDict, total=False):
     answer: object
     web_sources: list[dict[str, str | None]]
     research_summary: dict[str, int | str]
+    evidence_conflicts: list[dict]
 
 
 planner_model = llm.with_structured_output(PlannerOutput)
@@ -354,6 +371,9 @@ def agent_node(state): #for chat history and session id
             sessions[session_id] = chat_history
         state["answer"] = answer
         state["web_sources"] = extract_web_sources(response["messages"])
+        state["evidence_conflicts"] = detect_numeric_claim_relationships(
+            state["web_sources"]
+        )
         state["research_summary"] = research_summary(budget)
         return state
     except Exception:
@@ -445,6 +465,7 @@ def stream_agent(
                 tuple(deduplicated.values()),
                 tuple(plan),
                 research_summary(budget),
+                tuple(detect_numeric_claim_relationships(list(deduplicated.values()))),
             )
     except Exception:
         logger.exception(

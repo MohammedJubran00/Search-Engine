@@ -46,6 +46,7 @@ test('document SSE metadata preserves answerability and citations', () => {
       webCitations: [],
       researchPlan: [],
       researchSummary: null,
+      evidenceConflicts: [],
     },
   )
   assert.equal(readDocumentStreamMetadata({ delta: 'legacy general token' }), null)
@@ -62,6 +63,7 @@ test('general chat stream metadata preserves verified web sources', () => {
       webCitations,
       researchPlan: [],
       researchSummary: null,
+      evidenceConflicts: [],
     },
   )
 })

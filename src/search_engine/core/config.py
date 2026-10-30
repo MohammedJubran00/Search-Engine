@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     jwt_algorithm: str = "HS256"
     rag_storage_dir: Path = _PROJECT_ROOT / "data" / "uploads"
-    rag_max_upload_bytes: int = 10 * 1024 * 1024
+    rag_max_upload_bytes: int = 100 * 1024 * 1024
     rag_max_docx_uncompressed_bytes: int = 100 * 1024 * 1024
     rag_pdf_boilerplate_min_pages: int = 3
     rag_pdf_boilerplate_page_ratio: float = 0.6
@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     rag_embedding_max_concurrency: int = 2
     rag_embedding_max_retries: int = 3
     rag_embedding_retry_base_seconds: float = 1.0
+    rag_indexing_max_chunks: int = 5_000
     rag_retrieval_top_k: int = 5
     rag_retrieval_max_top_k: int = 50
     rag_retrieval_max_query_characters: int = 2_000

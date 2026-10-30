@@ -23,6 +23,15 @@ from src.search_engine.services.document_service import (
     DocumentService,
     InvalidUploadError,
 )
+from src.search_engine.repositories.document_index_repository import (
+    ConcurrentDocumentIndexingError,
+)
+from src.search_engine.services.document_indexing_service import (
+    DocumentIndexingError,
+    DocumentIndexingNotFoundError,
+    DocumentIndexingQuotaError,
+    DocumentIndexingService,
+)
 
 router = APIRouter()
 
@@ -107,3 +116,49 @@ async def delete_document(
             detail="Unable to delete the document safely.",
         ) from None
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{document_id}/index", response_model=DocumentResponse)
+async def index_document(
+    document_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DocumentResponse:
+    """Explicitly prepare one owned upload for AI questions."""
+    documents = DocumentService(db)
+    try:
+        document = await documents.get_for_user(
+            document_id=document_id,
+            user_id=user.id,
+        )
+        if document.indexing_status == "completed":
+            return DocumentResponse.model_validate(document)
+        await DocumentIndexingService(db).index(
+            document_id=document_id,
+            user_id=user.id,
+        )
+        refreshed = await documents.get_for_user(
+            document_id=document_id,
+            user_id=user.id,
+        )
+        return DocumentResponse.model_validate(refreshed)
+    except (DocumentNotFoundError, DocumentIndexingNotFoundError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        ) from None
+    except ConcurrentDocumentIndexingError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Document indexing is already in progress.",
+        ) from None
+    except DocumentIndexingQuotaError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Gemini embedding quota or capacity is currently unavailable.",
+        ) from None
+    except DocumentIndexingError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to prepare the document for AI questions.",
+        ) from None

@@ -1,12 +1,12 @@
 const configuredMaxBytes = Number.parseInt(
-  import.meta.env?.VITE_RAG_MAX_UPLOAD_BYTES || '10485760',
+  import.meta.env?.VITE_RAG_MAX_UPLOAD_BYTES || '104857600',
   10,
 )
 
 export const MAX_DOCUMENT_BYTES =
   Number.isFinite(configuredMaxBytes) && configuredMaxBytes > 0
     ? configuredMaxBytes
-    : 10 * 1024 * 1024
+    : 100 * 1024 * 1024
 
 export const SUPPORTED_DOCUMENT_EXTENSIONS = new Set(['pdf', 'docx', 'txt'])
 export const DOCUMENT_FILE_ACCEPT =

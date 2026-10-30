@@ -294,3 +294,86 @@ abstention, conflict, and prompt-injection cases for human review. They define
 expected behavior but do not claim benchmark scores. Remaining limitations
 include model fallibility, retrieval misses, imperfect relevance calibration,
 and excerpts that require a human to verify in the original document.
+
+## Phase 7 chat integration
+
+The existing `/chat` and `/chat/stream` contracts now accept an explicit
+`mode` of `general` (the backward-compatible default) or `documents`.
+`document_ids` is optional in document mode: an empty selection searches all
+indexed documents owned by the authenticated user. General mode rejects a
+document scope so context cannot accidentally cross modes. Selection is
+bounded by `RAG_CHAT_MAX_DOCUMENT_SELECTION`.
+
+Routing is deterministic at the FastAPI boundary. General mode continues to
+use the unchanged LangGraph/Gemini/Tavily path. Document mode calls
+`RagAnswerService` directly with the JWT-derived user ID and never falls back
+to Tavily or general model knowledge. No classifier, second query embedding,
+or second answer-generation request is added. Selected IDs are checked for
+ownership and for a completed usable index before any Gemini request.
+
+Document-mode JSON responses add `mode`, `status`, and validated `citations`.
+For SSE, general mode retains native token deltas. Because Phase 6 produces a
+completed answer, document mode emits exactly one full-answer `delta` carrying
+the same structured metadata, followed by `done`. This is compatibility
+buffering, not model-token streaming, and it never calls Gemini again merely
+to simulate streaming. Retrieval/provider errors are sanitized; cancellation
+is propagated rather than converted into a misleading success event.
+
+New messages use a versioned JSON envelope in the existing `messages.content`
+column. The service decodes it before returning conversation history, while
+legacy plain-text rows remain General Chat messages. The envelope associates
+the request mode and selected document scope with the user turn and associates
+answerability plus server-validated citations with the assistant turn. This
+preserves reload attribution without a schema migration. Raw model citation
+metadata is never persisted; only labels mapped by Phase 6 to authenticated
+retrieval rows are stored.
+
+The document API now includes `indexing_status`; the React panel disables
+selection for documents without a completed index. The chat UI defaults to
+General Chat, offers explicit Document Chat, clears selected scope when
+returning to General Chat, shows answerability, and renders filename/page
+citations without displaying internal UUIDs.
+
+Application limits reduce accidental quota use but cannot guarantee zero
+billing or override Google account/provider quotas. Real document chat may
+perform one query embedding, compatible token-count operations, and one
+answer generation. Quota exhaustion returns a safe error and never falls back
+to another paid provider. No automatic indexing, reranking, caching, or paid
+service was added.
+
+## Phase 7.5 attachment and manual-indexing workflow
+
+The primary upload workflow now lives in the chat composer. A user can stage
+multiple PDF, DOCX, or TXT files, remove them before upload, upload them to
+private storage, attach existing owned uploads, and see parsing/indexing state.
+Uploading remains a local storage and parsing operation; it never starts
+Gemini embeddings. Unindexed attachments block sending while preserving the
+question draft and expose an explicit **Prepare for AI questions** action.
+
+`POST /api/documents/{document_id}/index` is JWT-protected and calls the
+existing retry-safe `DocumentIndexingService` only after the user confirms in
+the UI that Gemini quota may be consumed. Missing and foreign documents share
+the same 404 response, concurrent work returns 409, provider quota exhaustion
+returns a sanitized 503, and an already completed index is returned without
+embedding the document again. No client-supplied user ID is accepted.
+
+The versioned message envelope now also stores server-resolved attachment
+metadata on the user turn, so filename, media type, size, and state survive a
+reload without trusting client-supplied metadata or adding a migration.
+Document-chat citations remain server-validated and evidence excerpts are
+collapsed by default in the UI.
+
+The configurable single-file limit is now 100 MiB (`104857600` bytes).
+Uploads continue to stream in 64 KiB chunks, enforce the actual byte count on
+the server, remove partial files on failure, retain file-signature and DOCX
+expanded-size checks, and remain outside public static storage. Proxy or
+deployment request-body limits must be configured separately. The expanded
+DOCX limit was intentionally not increased.
+
+Indexing is also bounded by `RAG_INDEXING_MAX_CHUNKS` (default `5000`). The
+limit is checked after local parsing/chunking and before any embedding request,
+so an unexpectedly large document cannot silently consume unbounded provider
+quota. Cancelling the indexing request records the active generation as failed
+and preserves the previous valid chunk set. Indexing remains a synchronous
+authenticated request; very large documents can take long enough to hit an
+external proxy timeout, so a durable local job worker remains a future option.

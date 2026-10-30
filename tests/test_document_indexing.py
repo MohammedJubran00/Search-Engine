@@ -20,6 +20,7 @@ from src.search_engine.repositories.document_index_repository import (
     prepare_document_chunks,
 )
 from src.search_engine.services.document_indexing_service import (
+    DocumentChunkLimitError,
     DocumentIndexingError,
     DocumentIndexingNotFoundError,
     DocumentIndexingService,
@@ -107,7 +108,7 @@ class FakeIndexRepository:
 
 
 class FakeEmbeddingProvider:
-    def __init__(self, *, error: Exception | None = None) -> None:
+    def __init__(self, *, error: BaseException | None = None) -> None:
         self.error = error
         self.calls: list[list[str]] = []
 
@@ -155,6 +156,7 @@ def _service(
     embeddings: FakeEmbeddingProvider,
     *,
     parser: object | None = None,
+    max_chunks: int | None = None,
 ) -> tuple[DocumentIndexingService, FakeSession]:
     session = FakeSession()
     service = DocumentIndexingService(
@@ -165,6 +167,7 @@ def _service(
         or RagDocumentParser(max_docx_uncompressed_bytes=1024 * 1024),
         chunker=RagTextChunker(chunk_size=100, chunk_overlap=20),
         embeddings=embeddings,
+        max_chunks=max_chunks,
     )
     return service, session
 
@@ -298,6 +301,47 @@ def test_empty_parsed_document_fails_explicitly_without_replacing_chunks(
 
     assert repository.status == "failed"
     assert repository.chunks == []
+
+
+def test_chunk_limit_stops_before_any_embedding_cost(tmp_path: Path) -> None:
+    document = _document(tmp_path)
+    repository = FakeIndexRepository(document)
+    embeddings = FakeEmbeddingProvider()
+    service, _ = _service(
+        tmp_path,
+        document,
+        repository,
+        embeddings,
+        max_chunks=1,
+    )
+
+    with pytest.raises(DocumentChunkLimitError, match="1-chunk"):
+        asyncio.run(service.index(document_id=document.id, user_id=document.user_id))
+
+    assert embeddings.calls == []
+    assert repository.status == "failed"
+    assert repository.error_message == "Document exceeds the 1-chunk indexing limit."
+
+
+def test_cancellation_marks_generation_failed_and_preserves_chunks(tmp_path: Path) -> None:
+    document = _document(tmp_path)
+    repository = FakeIndexRepository(document)
+    previous = TextChunk(document.id, document.user_id, 0, "previous")
+    repository.chunks = [previous]
+    service, session = _service(
+        tmp_path,
+        document,
+        repository,
+        FakeEmbeddingProvider(error=asyncio.CancelledError()),
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(service.index(document_id=document.id, user_id=document.user_id))
+
+    assert repository.chunks == [previous]
+    assert repository.status == "failed"
+    assert repository.error_message == "Document indexing was cancelled."
+    assert session.rollbacks == 1
 
 
 def test_concurrent_indexing_claim_is_rejected(tmp_path: Path) -> None:

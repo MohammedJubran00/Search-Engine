@@ -1,6 +1,6 @@
 """Explicit, retry-safe document chunking and vector indexing workflow.
 
-This service is intentionally not exposed through FastAPI and is not invoked
+This service is invoked only by an explicit authenticated indexing action, never
 by upload. It commits a short generation claim before parser/Gemini work, then
 atomically swaps chunks and marks that generation complete.
 """
@@ -18,7 +18,10 @@ from src.search_engine.rag.contracts import (
     EmbeddingProvider,
     TextChunk,
 )
-from src.search_engine.rag.embeddings import GeminiEmbeddingProvider
+from src.search_engine.rag.embeddings import (
+    EmbeddingRateLimitError,
+    GeminiEmbeddingProvider,
+)
 from src.search_engine.rag.parsers import DocumentParseError, RagDocumentParser
 from src.search_engine.rag.storage import DocumentStorage, StorageOperationError
 from src.search_engine.repositories.document_index_repository import (
@@ -38,6 +41,14 @@ class DocumentIndexingNotFoundError(DocumentIndexingError, LookupError):
 
 class EmptyDocumentIndexError(DocumentIndexingError, ValueError):
     """Raised when parsing produces no non-whitespace chunks."""
+
+
+class DocumentChunkLimitError(DocumentIndexingError, ValueError):
+    """Raised before embeddings when a document exceeds the local cost bound."""
+
+
+class DocumentIndexingQuotaError(DocumentIndexingError):
+    """Raised when provider capacity remains unavailable after safe retries."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +72,7 @@ class DocumentIndexingService:
         parser: RagDocumentParser | None = None,
         chunker: RagTextChunker | None = None,
         embeddings: EmbeddingProvider | None = None,
+        max_chunks: int | None = None,
     ) -> None:
         self._session = session
         self._index = repository or DocumentIndexRepository(session)
@@ -79,6 +91,9 @@ class DocumentIndexingService:
             chunk_overlap=settings.rag_chunk_overlap,
         )
         self._embeddings = embeddings or GeminiEmbeddingProvider()
+        self._max_chunks = max_chunks or settings.rag_indexing_max_chunks
+        if self._max_chunks < 1:
+            raise ValueError("Indexing maximum chunks must be positive.")
 
     async def index(
         self,
@@ -118,11 +133,19 @@ class DocumentIndexingService:
                 generation=claim.generation,
                 chunk_count=chunk_count,
             )
+        except asyncio.CancelledError:
+            await self._session.rollback()
+            await self._record_failure(claim, "Document indexing was cancelled.")
+            raise
         except Exception as exc:
             await self._session.rollback()
             await self._record_failure(claim, _safe_failure_message(exc))
             if isinstance(exc, DocumentIndexingError):
                 raise
+            if isinstance(exc, EmbeddingRateLimitError):
+                raise DocumentIndexingQuotaError(
+                    "Embedding quota or provider capacity is currently unavailable."
+                ) from exc
             if isinstance(exc, (DocumentParseError, StorageOperationError)):
                 raise DocumentIndexingError(str(exc)) from exc
             raise DocumentIndexingError("Unable to index the document.") from exc
@@ -145,6 +168,10 @@ class DocumentIndexingService:
         chunks = self._chunker.split(record, parsed)
         if not chunks:
             raise EmptyDocumentIndexError("Document contains no indexable text.")
+        if len(chunks) > self._max_chunks:
+            raise DocumentChunkLimitError(
+                f"Document exceeds the {self._max_chunks}-chunk indexing limit."
+            )
         return chunks
 
     async def _record_failure(
@@ -167,6 +194,8 @@ class DocumentIndexingService:
 def _safe_failure_message(exc: Exception) -> str:
     if isinstance(exc, EmptyDocumentIndexError):
         return "Document contains no indexable text."
+    if isinstance(exc, DocumentChunkLimitError):
+        return str(exc)
     if isinstance(exc, DocumentParseError):
         return str(exc)
     if isinstance(exc, ConcurrentDocumentIndexingError):

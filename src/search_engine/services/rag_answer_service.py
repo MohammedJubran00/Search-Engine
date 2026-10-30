@@ -16,6 +16,9 @@ from src.search_engine.rag.generation import (
     GeminiRagGenerationProvider,
     InvalidGenerationResponseError,
 )
+from src.search_engine.repositories.document_retrieval_repository import (
+    DocumentRetrievalRepository,
+)
 from src.search_engine.services.retrieval_service import SemanticRetrievalService
 
 _SYSTEM_PROMPT = """You are a document question-answering system.
@@ -36,6 +39,16 @@ class RetrievalService(Protocol):
     ) -> list[RetrievedChunk]: ...
 
 
+class FullContextLoader(Protocol):
+    async def load_full_document_chunks(
+        self,
+        *,
+        user_id: uuid.UUID,
+        document_id: uuid.UUID,
+        limit: int,
+    ) -> list[RetrievedChunk]: ...
+
+
 class RagAnswerCitationError(InvalidGenerationResponseError):
     """Raised when generated citations do not map to the retrieved source set."""
 
@@ -50,6 +63,7 @@ class RagAnswerService:
         retrieval: RetrievalService | None = None,
         generation: GenerationProvider | None = None,
         context_builder: RagContextBuilder | None = None,
+        full_context_loader: FullContextLoader | None = None,
     ) -> None:
         if retrieval is None and session is None:
             raise ValueError("A database session is required for default retrieval.")
@@ -61,6 +75,12 @@ class RagAnswerService:
             self._retrieval = SemanticRetrievalService(session)
         self._generation = generation or GeminiRagGenerationProvider()
         self._context_builder = context_builder or RagContextBuilder()
+        self._full_context_builder = RagContextBuilder(
+            max_sources=settings.rag_full_context_max_chunks,
+        )
+        self._full_context_loader = full_context_loader
+        if self._full_context_loader is None and session is not None:
+            self._full_context_loader = DocumentRetrievalRepository(session)
 
     async def answer(
         self,
@@ -71,17 +91,6 @@ class RagAnswerService:
         document_ids: Sequence[uuid.UUID] | None = None,
         min_similarity: float | None = settings.rag_retrieval_default_min_similarity,
     ) -> RagAnswerResult:
-        chunks = await self._retrieval.retrieve(
-            user_id=user_id,
-            query=question,
-            top_k=top_k,
-            document_ids=document_ids,
-            min_similarity=min_similarity,
-        )
-        await self._release_retrieval_transaction()
-        if not chunks:
-            return _insufficient_result(retrieved_count=0, question=question)
-
         fixed_tokens = (
             await self._generation.count_tokens(_SYSTEM_PROMPT)
             + await self._generation.count_tokens(question.strip())
@@ -98,10 +107,33 @@ class RagAnswerService:
                 question=question,
                 metadata={"reason": "context_budget_exhausted"},
             )
-        context = await self._context_builder.build(
+
+        chunks, strategy = await self._select_evidence(
+            user_id=user_id,
+            question=question,
+            top_k=top_k,
+            document_ids=document_ids,
+            min_similarity=min_similarity,
+            available_tokens=available,
+        )
+        await self._release_retrieval_transaction()
+        if not chunks:
+            return _insufficient_result(retrieved_count=0, question=question)
+
+        context_builder = (
+            self._full_context_builder
+            if strategy == "full_document"
+            else self._context_builder
+        )
+        context_budget = (
+            min(available, settings.rag_full_context_max_tokens)
+            if strategy == "full_document"
+            else available
+        )
+        context = await context_builder.build(
             chunks,
             token_counter=self._generation.count_tokens,
-            available_tokens=available,
+            available_tokens=context_budget,
         )
         if not context.sources:
             return _insufficient_result(
@@ -144,10 +176,47 @@ class RagAnswerService:
             generation_seconds=elapsed,
             usage=draft.usage,
             metadata={
+                "context_strategy": strategy,
                 "duplicates_skipped": context.duplicate_chunks_skipped,
                 "truncated_sources": context.truncated_source_count,
             },
         )
+
+    async def _select_evidence(
+        self,
+        *,
+        user_id: uuid.UUID,
+        question: str,
+        top_k: int,
+        document_ids: Sequence[uuid.UUID] | None,
+        min_similarity: float | None,
+        available_tokens: int,
+    ) -> tuple[list[RetrievedChunk], str]:
+        if (
+            settings.rag_full_context_enabled
+            and self._full_context_loader is not None
+            and document_ids is not None
+            and len(document_ids) == 1
+        ):
+            candidates = await self._full_context_loader.load_full_document_chunks(
+                user_id=user_id,
+                document_id=document_ids[0],
+                limit=settings.rag_full_context_max_chunks,
+            )
+            if candidates:
+                raw_text = "\n\n".join(chunk.text.strip() for chunk in candidates)
+                full_budget = min(available_tokens, settings.rag_full_context_max_tokens)
+                if raw_text and await self._generation.count_tokens(raw_text) <= full_budget:
+                    return candidates, "full_document"
+
+        chunks = await self._retrieval.retrieve(
+            user_id=user_id,
+            query=question,
+            top_k=top_k,
+            document_ids=document_ids,
+            min_similarity=min_similarity,
+        )
+        return chunks, "semantic_retrieval"
 
     async def _release_retrieval_transaction(self) -> None:
         # This service owns a dedicated read session. End its SELECT transaction

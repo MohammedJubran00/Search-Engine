@@ -40,6 +40,16 @@ class FakeGeneration:
         return self.draft
 
 
+class FakeFullContextLoader:
+    def __init__(self, chunks: list[RetrievedChunk]) -> None:
+        self.chunks = chunks
+        self.calls: list[dict[str, object]] = []
+
+    async def load_full_document_chunks(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.chunks
+
+
 def _chunk(
     rank: int,
     text: str,
@@ -63,7 +73,12 @@ def _chunk(
 
 
 def _answer(retrieval: FakeRetrieval, generation: FakeGeneration, **kwargs):
-    service = RagAnswerService(retrieval=retrieval, generation=generation)
+    full_context_loader = kwargs.pop("full_context_loader", None)
+    service = RagAnswerService(
+        retrieval=retrieval,
+        generation=generation,
+        full_context_loader=full_context_loader,
+    )
     return asyncio.run(
         service.answer(user_id=uuid.uuid4(), question=kwargs.pop("question", "What?"), **kwargs)
     )
@@ -187,3 +202,61 @@ def test_only_retrieval_returned_sources_can_reach_result() -> None:
     )
     assert {source.chunk_id for source in result.sources} == {owned.chunk_id}
     assert foreign.chunk_id not in {source.chunk_id for source in result.sources}
+
+
+def test_small_single_document_uses_full_context_without_query_embedding() -> None:
+    document_id = uuid.uuid4()
+    chunks = [
+        _chunk(1, "Project goal one.", document_id=document_id),
+        _chunk(2, "Project goal two.", document_id=document_id),
+    ]
+    retrieval = FakeRetrieval([])
+    loader = FakeFullContextLoader(chunks)
+    result = _answer(
+        retrieval,
+        FakeGeneration(
+            GenerationDraft(AnswerStatus.ANSWERED, "Two goals [S1] [S2].", ("S1", "S2"))
+        ),
+        document_ids=[document_id],
+        full_context_loader=loader,
+    )
+
+    assert result.metadata["context_strategy"] == "full_document"
+    assert retrieval.calls == []
+    assert len(loader.calls) == 1
+    assert {source.chunk_id for source in result.sources} == {
+        chunk.chunk_id for chunk in chunks
+    }
+
+
+def test_multiple_documents_keep_semantic_retrieval_path() -> None:
+    first, second = uuid.uuid4(), uuid.uuid4()
+    retrieval = FakeRetrieval([_chunk(1, "Relevant evidence", document_id=first)])
+    loader = FakeFullContextLoader([_chunk(1, "Unused", document_id=first)])
+    result = _answer(
+        retrieval,
+        FakeGeneration(GenerationDraft(AnswerStatus.ANSWERED, "Answer [S1].", ("S1",))),
+        document_ids=[first, second],
+        full_context_loader=loader,
+    )
+
+    assert result.metadata["context_strategy"] == "semantic_retrieval"
+    assert len(retrieval.calls) == 1
+    assert loader.calls == []
+
+
+def test_oversized_single_document_falls_back_to_semantic_retrieval() -> None:
+    document_id = uuid.uuid4()
+    retrieval = FakeRetrieval([_chunk(1, "Relevant excerpt", document_id=document_id)])
+    loader = FakeFullContextLoader(
+        [_chunk(1, "word " * 3_100, document_id=document_id)]
+    )
+    result = _answer(
+        retrieval,
+        FakeGeneration(GenerationDraft(AnswerStatus.ANSWERED, "Answer [S1].", ("S1",))),
+        document_ids=[document_id],
+        full_context_loader=loader,
+    )
+
+    assert result.metadata["context_strategy"] == "semantic_retrieval"
+    assert len(retrieval.calls) == 1

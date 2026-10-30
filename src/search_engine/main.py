@@ -93,7 +93,10 @@ def agent_node(state): #for chat history and session id
     # half-written turn in sessions[session_id].
     session_id = state.get("session_id")
     query = state.get("query")
-    chat_history = list(sessions.get(session_id, [])) #get the chat history for the session id للتذكير 
+    provided_history = state.get("history")
+    chat_history = list(
+        provided_history if provided_history is not None else sessions.get(session_id, [])
+    )
     # [] اذا ما بقت السيشن موجودة 
 
     try:
@@ -112,7 +115,8 @@ def agent_node(state): #for chat history and session id
 
         answer=response["messages"][-1].content #[-1] اخر مسج انبعت من اليوزر 
         chat_history.append(("assistant", answer))
-        sessions[session_id] = chat_history
+        if provided_history is None:
+            sessions[session_id] = chat_history
         state["answer"] = answer
         return state
     except Exception:
@@ -145,10 +149,10 @@ def _delta_text(content) -> str:
     return ""
 
 
-def stream_agent(session_id: str, query: str):
+def stream_agent(session_id: str, query: str, history=None):
     # Same session memory as agent_node, but yields Gemini tokens as they
     # arrive instead of waiting for the full invoke() result.
-    chat_history = list(sessions.get(session_id, []))
+    chat_history = list(history if history is not None else sessions.get(session_id, []))
     chat_history.append(("human", query))
     full_answer = []
 
@@ -173,7 +177,8 @@ def stream_agent(session_id: str, query: str):
             raise RuntimeError("The agent returned an empty answer.")
 
         chat_history.append(("assistant", answer))
-        sessions[session_id] = chat_history
+        if history is None:
+            sessions[session_id] = chat_history
     except Exception:
         logger.exception(
             "LangGraph stream_agent failed for session_id=%r",

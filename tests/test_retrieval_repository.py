@@ -207,6 +207,25 @@ def test_exact_cosine_search_filters_ownership_status_nulls_and_thresholds() -> 
                     user_id=owner.id,
                     document_ids=[primary.id, failed.id, foreign.id],
                 ) == {primary.id}
+                full_document = await repository.load_full_document_chunks(
+                    user_id=owner.id,
+                    document_id=primary.id,
+                    limit=2,
+                )
+                assert [chunk.text for chunk in full_document] == [
+                    "perfect zero",
+                    "perfect one",
+                ]
+                assert await repository.load_full_document_chunks(
+                    user_id=owner.id,
+                    document_id=primary.id,
+                    limit=1,
+                ) == []
+                assert await repository.load_full_document_chunks(
+                    user_id=owner.id,
+                    document_id=foreign.id,
+                    limit=2,
+                ) == []
                 assert await repository.has_searchable_chunks(user_id=owner.id)
             finally:
                 await transaction.rollback()

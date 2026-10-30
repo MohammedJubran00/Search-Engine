@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.search_engine.models.conversation import Conversation
 from src.search_engine.models.message import Message
+from src.search_engine.core.config import settings
 from src.search_engine.repositories.conversation_repository import ConversationRepository
 from src.search_engine.repositories.message_repository import MessageRepository
 
@@ -142,6 +143,44 @@ class ChatService:
         rows = await self._messages.list_for_conversation(latest.id)
         messages = [_decode_message(message) for message in rows]
         return latest, messages
+
+    async def get_bounded_general_history(
+        self,
+        *,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        max_messages: int = settings.general_chat_history_max_messages,
+        max_characters: int = settings.general_chat_history_max_characters,
+    ) -> list[tuple[str, str]]:
+        """Return recent persisted General Chat turns without another model call."""
+        if max_messages < 1 or max_characters < 1:
+            raise ValueError("History limits must be positive.")
+        conversation = await self._conversations.get_by_id_for_user(
+            conversation_id,
+            user_id,
+        )
+        if conversation is None:
+            raise ConversationNotFoundError
+        rows = await self._messages.list_for_conversation(conversation.id)
+        decoded = [
+            item
+            for item in (_decode_message(row) for row in rows)
+            if item.mode == "general" and item.role in {"user", "assistant"}
+        ]
+        selected: list[tuple[str, str]] = []
+        remaining = max_characters
+        for item in reversed(decoded):
+            if len(selected) == max_messages or remaining < 1:
+                break
+            content = item.content.strip()
+            if not content:
+                continue
+            if len(content) > remaining:
+                content = content[-remaining:]
+            selected.append((item.role, content))
+            remaining -= len(content)
+        selected.reverse()
+        return selected
 
 
 def _encode_message(

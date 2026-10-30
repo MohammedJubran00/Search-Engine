@@ -377,3 +377,27 @@ quota. Cancelling the indexing request records the active generation as failed
 and preserves the previous valid chunk set. Indexing remains a synchronous
 authenticated request; very large documents can take long enough to hit an
 external proxy timeout, so a durable local job worker remains a future option.
+
+## Adaptive document context and bounded conversation history
+
+Document Chat now uses a deterministic, configurable strategy. When exactly
+one explicit owned document is selected, its completed stored chunks are loaded
+in source order without a query embedding. The full-document path is used only
+when both the chunk count (`RAG_FULL_CONTEXT_MAX_CHUNKS`) and measured token
+count (`RAG_FULL_CONTEXT_MAX_TOKENS`) fit the answer input budget. Larger
+documents, multiple documents, an empty all-document scope, and disabled full
+context continue through exact pgvector semantic retrieval. The original file
+remains in private storage and neither path re-parses or re-embeds an unchanged
+valid index.
+
+The selected strategy is recorded as `full_document` or `semantic_retrieval`
+in internal answer metadata. Both paths retain source chunk IDs, page metadata,
+prompt-injection boundaries, validated citations, and explicit abstention. The
+automated comparison uses fake providers; no real token, latency, or quality
+benchmark is claimed without an approved provider run.
+
+General Chat context is reconstructed from authenticated persisted messages,
+not process-local memory. Only recent General Chat turns are included, bounded
+deterministically by `GENERAL_CHAT_HISTORY_MAX_MESSAGES` and
+`GENERAL_CHAT_HISTORY_MAX_CHARACTERS`. Document Chat turns are excluded. No
+silent summarization or additional Gemini call is made.

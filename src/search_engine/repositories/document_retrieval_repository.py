@@ -85,6 +85,62 @@ class DocumentRetrievalRepository:
         result = await self._session.execute(statement)
         return result.scalar_one_or_none() is not None
 
+    async def load_full_document_chunks(
+        self,
+        *,
+        user_id: uuid.UUID,
+        document_id: uuid.UUID,
+        limit: int,
+    ) -> list[RetrievedChunk]:
+        """Load one owned completed index in source order without embedding a query."""
+        if limit < 1:
+            raise ValueError("Full-document chunk limit must be positive.")
+        rows = (
+            await self._session.execute(
+                select(
+                    DocumentChunk.id.label("chunk_id"),
+                    DocumentChunk.document_id,
+                    Document.original_filename.label("filename"),
+                    DocumentChunk.chunk_index,
+                    DocumentChunk.content,
+                    DocumentChunk.page_number,
+                    DocumentChunk.char_start,
+                    DocumentChunk.char_end,
+                )
+                .join(Document, Document.id == DocumentChunk.document_id)
+                .join(
+                    DocumentIndexState,
+                    DocumentIndexState.document_id == Document.id,
+                )
+                .where(
+                    Document.user_id == user_id,
+                    Document.id == document_id,
+                    DocumentIndexState.status == "completed",
+                    DocumentChunk.embedding.is_not(None),
+                )
+                .order_by(DocumentChunk.chunk_index.asc(), DocumentChunk.id.asc())
+                .limit(limit + 1)
+            )
+        ).all()
+        if len(rows) > limit:
+            return []
+        return [
+            RetrievedChunk(
+                chunk_id=row.chunk_id,
+                document_id=row.document_id,
+                filename=row.filename,
+                chunk_index=row.chunk_index,
+                text=row.content,
+                page_number=row.page_number,
+                char_start=row.char_start,
+                char_end=row.char_end,
+                cosine_distance=0.0,
+                cosine_similarity=1.0,
+                rank=rank,
+            )
+            for rank, row in enumerate(rows, start=1)
+        ]
+
     async def search(
         self,
         *,

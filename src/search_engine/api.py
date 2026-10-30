@@ -261,6 +261,15 @@ async def chat(
         return error_response(400, _EMPTY_QUERY)
 
     service = ChatService(db)
+    general_history: list[tuple[str, str]] = []
+    if request.mode == "general" and request.conversation_id is not None:
+        try:
+            general_history = await service.get_bounded_general_history(
+                user_id=user.id,
+                conversation_id=request.conversation_id,
+            )
+        except ConversationNotFoundError:
+            return error_response(404, _CONVERSATION_NOT_FOUND)
     try:
         attachments = await resolve_chat_attachments(
             db=db,
@@ -316,6 +325,7 @@ async def chat(
             {
                 "session_id": thread_id,
                 "query": query,
+                "history": general_history,
             },
         )
     except Exception:
@@ -370,6 +380,15 @@ async def chat_stream(
         return error_response(400, _EMPTY_QUERY)
 
     service = ChatService(db)
+    general_history: list[tuple[str, str]] = []
+    if request.mode == "general" and request.conversation_id is not None:
+        try:
+            general_history = await service.get_bounded_general_history(
+                user_id=user.id,
+                conversation_id=request.conversation_id,
+            )
+        except ConversationNotFoundError:
+            return error_response(404, _CONVERSATION_NOT_FOUND)
     try:
         attachments = await resolve_chat_attachments(
             db=db,
@@ -452,7 +471,7 @@ async def chat_stream(
     async def generate():
         try:
             yield sse_event({"conversation_id": str(conversation_id)})
-            iterator = stream_agent(thread_id, query)
+            iterator = stream_agent(thread_id, query, history=general_history)
             yielded = False
             answer = ""
 

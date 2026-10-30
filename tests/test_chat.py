@@ -83,6 +83,7 @@ def test_chat_persists_for_the_authenticated_user(
     graph_input = mock_invoke.call_args.args[0]
     assert graph_input["session_id"] == body["conversation_id"]
     assert graph_input["query"] == "What is the capital of France?"
+    assert graph_input["history"] == []
     assert "forged-id" not in graph_input["session_id"]
 
     latest = client.get("/api/conversations/latest", headers=headers)
@@ -141,7 +142,7 @@ def test_unknown_conversation_is_not_found(mock_invoke, client: TestClient) -> N
 
 @patch(
     "src.search_engine.api.stream_agent",
-    side_effect=lambda session_id, query: iter(["Hel", "lo"]),
+    side_effect=lambda session_id, query, history=None: iter(["Hel", "lo"]),
 )
 def test_stream_persists_assistant_answer(mock_stream, client: TestClient) -> None:
     headers = auth_headers(client)
@@ -159,6 +160,39 @@ def test_stream_persists_assistant_answer(mock_stream, client: TestClient) -> No
     data = latest.json()
     assert [item["role"] for item in data["messages"]] == ["user", "assistant"]
     assert data["messages"][1]["content"] == "Hello"
+
+
+@patch("src.search_engine.api.graph_app.invoke")
+def test_general_follow_up_uses_bounded_persisted_history(
+    mock_invoke,
+    client: TestClient,
+) -> None:
+    mock_invoke.side_effect = [
+        {"answer": "Ada Lovelace."},
+        {"answer": "She worked on the Analytical Engine."},
+    ]
+    headers = auth_headers(client)
+    first = client.post(
+        "/chat",
+        json={"query": "Who was the first programmer?"},
+        headers=headers,
+    )
+    conversation_id = first.json()["conversation_id"]
+    second = client.post(
+        "/chat",
+        json={
+            "query": "Tell me more about her.",
+            "conversation_id": conversation_id,
+        },
+        headers=headers,
+    )
+
+    assert second.status_code == 200
+    follow_up_state = mock_invoke.call_args_list[1].args[0]
+    assert follow_up_state["history"] == [
+        ("user", "Who was the first programmer?"),
+        ("assistant", "Ada Lovelace."),
+    ]
 
 
 @patch("src.search_engine.api.resolve_chat_attachments", new_callable=AsyncMock)

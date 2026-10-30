@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     rag_answer_max_sources: int = 8
     rag_answer_evidence_excerpt_characters: int = 320
     rag_chat_max_document_selection: int = 10
+    rag_full_context_enabled: bool = True
+    rag_full_context_max_tokens: int = 3_000
+    rag_full_context_max_chunks: int = 64
+    general_chat_history_max_messages: int = 12
+    general_chat_history_max_characters: int = 12_000
 
     def _postgres_url(self, driver: str) -> str:
         password = quote_plus(self.db_password)

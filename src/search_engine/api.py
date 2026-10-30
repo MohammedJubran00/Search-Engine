@@ -34,8 +34,9 @@ from src.search_engine.auth_router import router as auth_router
 from src.search_engine.conversation_router import router as conversation_router
 from src.search_engine.core.config import settings
 from src.search_engine.database.database import get_db
-from src.search_engine.deps import get_current_user
+from src.search_engine.deps import get_current_user, get_usage_request
 from src.search_engine.document_router import router as document_router
+from src.search_engine.metrics_router import router as metrics_router
 from src.search_engine.main import app as graph_app  # عشان ما نخلطه مع: app = FastAPI() ( لا نستخدم نفس الاسم)
 from src.search_engine.main import AgentStreamMetadata, stream_agent
 from src.search_engine.models.user import User
@@ -49,6 +50,7 @@ from src.search_engine.rag.answering import RagAnswerResult, SourceReference
 from src.search_engine.rag.generation import RagGenerationError
 from src.search_engine.research.presentation import derive_answer_presentation
 from src.search_engine.services.rag_answer_service import RagAnswerService
+from src.search_engine.services.observability_service import UsageRecord
 from src.search_engine.services.retrieval_service import (
     RetrievalDocumentAccessError,
     RetrievalDocumentUnavailableError,
@@ -77,6 +79,7 @@ app.include_router(
     tags=["conversations"],
 )
 app.include_router(document_router, prefix="/api/documents", tags=["documents"])
+app.include_router(metrics_router, prefix="/api/metrics", tags=["metrics"])
 
 
 def error_response(status_code: int, message: str) -> JSONResponse:
@@ -89,7 +92,11 @@ def error_response(status_code: int, message: str) -> JSONResponse:
 async def handle_invalid_request(request: Request, exc: RequestValidationError):
     # FastAPI would otherwise return 422 with { "detail": [...] }.
     # Map missing/invalid fields to HTTP 400 and our { "error": ... } shape.
-    logger.warning("Invalid request body: %s", exc.errors())
+    safe_errors = [
+        {"location": list(error.get("loc", ())), "type": error.get("type", "invalid")}
+        for error in exc.errors()
+    ]
+    logger.warning("Invalid request body fields: %s", safe_errors)
 
     messages = []
     for err in exc.errors():
@@ -266,6 +273,31 @@ def document_error_response(exc: Exception) -> JSONResponse:
     return error_response(503, _GENERATION_FAILED)
 
 
+def record_rag_usage(usage: UsageRecord, result: RagAnswerResult) -> None:
+    usage.retrieved_chunk_count = result.retrieved_chunk_count
+    usage.source_count = len(result.sources)
+    usage.citation_count = len(result.citations)
+    usage.generation_seconds = float(result.generation_seconds or 0)
+    usage.retrieval_seconds = float(result.metadata.get("retrieval_seconds", 0))
+    usage.input_tokens = int(result.usage.get("input_tokens", 0))
+    usage.output_tokens = int(result.usage.get("output_tokens", 0))
+
+
+def record_research_usage(
+    usage: UsageRecord,
+    *,
+    citations: list[dict],
+    plan: list[str],
+    summary: dict | None,
+) -> None:
+    usage.source_count = len(citations)
+    usage.citation_count = len(citations)
+    usage.research_iterations = len(plan)
+    if summary:
+        usage.search_count = int(summary.get("search_count", 0) or 0)
+        usage.tavily_seconds = float(summary.get("tavily_seconds", 0) or 0)
+
+
 @app.get("/")
 def root():
     return {"message": "AI Search Engine API is running"}
@@ -276,7 +308,10 @@ async def chat(
     request: ChatRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    usage: UsageRecord = Depends(get_usage_request),
 ):
+    usage.mode = request.mode
+    usage.research_mode = request.research_mode
     query = (request.query or "").strip()
     if not query:
         return error_response(400, _EMPTY_QUERY)
@@ -324,12 +359,14 @@ async def chat(
                 document_ids=request.document_ids,
             )
         except (RetrievalError, RagGenerationError) as exc:
+            usage.mark_error(quota="quota" in str(exc).lower())
             logger.warning(
                 "Document chat failed for conversation_id=%s error_type=%s",
                 conversation.id,
                 type(exc).__name__,
             )
             return document_error_response(exc)
+        record_rag_usage(usage, result)
         return ChatResponse(
             answer=result.answer,
             conversation_id=conversation.id,
@@ -360,8 +397,10 @@ async def chat(
             else await invocation
         )
     except TimeoutError:
+        usage.mark_error()
         return error_response(504, _RESEARCH_TIMEOUT)
     except Exception:
+        usage.mark_error()
         logger.exception("LangGraph invoke failed for conversation_id=%s", conversation.id)
         return error_response(
             500,
@@ -398,6 +437,12 @@ async def chat(
         result.get("research_summary")
         if isinstance(result, dict) and isinstance(result.get("research_summary"), dict)
         else None
+    )
+    record_research_usage(
+        usage,
+        citations=web_citations,
+        plan=research_plan,
+        summary=research_summary,
     )
     evidence_conflicts = [
         item
@@ -443,7 +488,10 @@ async def chat_stream(
     request: ChatRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    usage: UsageRecord = Depends(get_usage_request),
 ):
+    usage.mode = request.mode
+    usage.research_mode = request.research_mode
     query = (request.query or "").strip()
     if not query:
         return error_response(400, _EMPTY_QUERY)
@@ -496,6 +544,7 @@ async def chat_stream(
                     query=query,
                     document_ids=request.document_ids,
                 )
+                record_rag_usage(usage, result)
                 citations = [citation_payload(source) for source in result.citations]
                 presentation = derive_answer_presentation(result.answer).model_dump()
                 # One honest completed-answer delta preserves old SSE clients. It is
@@ -521,6 +570,7 @@ async def chat_stream(
             except asyncio.CancelledError:
                 raise
             except (RetrievalError, RagGenerationError) as exc:
+                usage.mark_error(quota="quota" in str(exc).lower())
                 logger.warning(
                     "Streaming document chat failed for conversation_id=%s error_type=%s",
                     conversation_id,
@@ -564,11 +614,13 @@ async def chat_stream(
                     remaining = research_deadline - asyncio.get_running_loop().time()
                     if remaining <= 0:
                         yield sse_event({"error": _RESEARCH_TIMEOUT})
+                        usage.mark_error()
                         return
                     try:
                         delta = await asyncio.wait_for(next_item, timeout=remaining)
                     except TimeoutError:
                         yield sse_event({"error": _RESEARCH_TIMEOUT})
+                        usage.mark_error()
                         return
                 else:
                     delta = await next_item
@@ -597,6 +649,12 @@ async def chat_stream(
                 return
 
             try:
+                record_research_usage(
+                    usage,
+                    citations=web_citations,
+                    plan=research_plan,
+                    summary=research_summary,
+                )
                 presentation = derive_answer_presentation(answer).model_dump()
                 await service.add_assistant_message(
                     user_id=user_id,
@@ -626,6 +684,7 @@ async def chat_stream(
                 )
             yield sse_event({"done": True, "conversation_id": str(conversation_id)})
         except Exception:
+            usage.mark_error()
             logger.exception("Streaming chat failed for conversation_id=%s", conversation_id)
             yield sse_event(
                 {

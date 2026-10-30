@@ -360,6 +360,21 @@ embedding the document again. No client-supplied user ID is accepted.
 The versioned message envelope now also stores server-resolved attachment
 metadata on the user turn, so filename, media type, size, and state survive a
 reload without trusting client-supplied metadata or adding a migration.
+
+## Private operational metrics
+
+Authenticated users can inspect content-free operational totals at
+`GET /api/metrics` or from the frontend Usage panel. The in-process collector
+tracks bounded timing, source/search counts, provider-reported token usage,
+embedding job attempts, and error counts. It never stores prompts, answers,
+document text, access tokens, or another user's identifiers. Request ceilings
+are enforced per user with `USAGE_DAILY_REQUEST_LIMIT` and
+`USAGE_MAX_CONCURRENT_REQUESTS`.
+
+This is intentionally a local development control, not durable billing
+telemetry: retained events are bounded by `USAGE_EVENT_RETENTION` and all
+metrics reset when the API process restarts. Token totals can be zero when the
+provider does not report usage metadata.
 Document-chat citations remain server-validated and evidence excerpts are
 collapsed by default in the UI.
 

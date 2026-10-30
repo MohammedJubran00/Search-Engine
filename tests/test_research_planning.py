@@ -104,11 +104,14 @@ def test_search_budget_deduplicates_queries_and_stops_runaway_calls(mock_search)
     assert first == duplicate
     assert mock_search.invoke.call_count == 2
     assert "budget" in stopped
-    assert research_summary(budget) == {
+    summary = research_summary(budget)
+    assert summary == {
         "search_count": 2,
         "search_failures": 0,
+        "tavily_seconds": summary["tavily_seconds"],
         "termination_reason": "search_budget_exhausted",
     }
+    assert summary["tavily_seconds"] >= 0
 
 
 @patch("src.search_engine.main.tavily")

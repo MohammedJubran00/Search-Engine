@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     research_deep_max_searches: int = 6
     research_max_iterations: int = 4
     research_max_execution_seconds: float = 90.0
+    usage_daily_request_limit: int = 200
+    usage_max_concurrent_requests: int = 2
+    usage_event_retention: int = 500
 
     def _postgres_url(self, driver: str) -> str:
         password = quote_plus(self.db_password)

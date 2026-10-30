@@ -63,6 +63,7 @@ class ResearchSummary(BaseModel):
     search_count: int = Field(ge=0)
     search_failures: int = Field(ge=0)
     termination_reason: str
+    tavily_seconds: float = Field(default=0.0, ge=0)
 
 
 class EvidenceClaim(BaseModel):

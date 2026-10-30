@@ -5,6 +5,7 @@ import ChatModeSelector from './components/ChatModeSelector'
 import DocumentPanel from './components/DocumentPanel'
 import Header from './components/Header'
 import SearchInput from './components/SearchInput'
+import UsageDashboard from './components/UsageDashboard'
 import './App.css'
 
 let messageSeq = 0
@@ -53,6 +54,7 @@ export default function App() {
   const [researchMode, setResearchMode] = useState('standard')
   const [documents, setDocuments] = useState([])
   const [selectedDocumentIds, setSelectedDocumentIds] = useState([])
+  const [metricsOpen, setMetricsOpen] = useState(false)
   const isLoadingRef = useRef(false)
   const conversationIdRef = useRef(null)
 
@@ -193,8 +195,12 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Header />
+      <Header
+        metricsOpen={metricsOpen}
+        onToggleMetrics={() => setMetricsOpen((current) => !current)}
+      />
       <main className="app-main">
+        {metricsOpen ? <UsageDashboard /> : null}
         <DocumentPanel
           documents={documents}
           onDocumentsChange={setDocuments}

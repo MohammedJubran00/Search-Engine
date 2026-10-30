@@ -11,6 +11,7 @@ Communicates with: `core.security.decode_access_token`, `UserRepository`,
 `database.get_db`, `/api/auth/me`, and protected chat routes.
 """
 
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
@@ -20,6 +21,11 @@ from src.search_engine.core.security import InvalidTokenError, decode_access_tok
 from src.search_engine.database.database import get_db
 from src.search_engine.models.user import User
 from src.search_engine.repositories.user_repository import UserRepository
+from src.search_engine.services.observability_service import (
+    UsageLimitError,
+    UsageRecord,
+    observability,
+)
 
 NOT_AUTHENTICATED = "Not authenticated."
 
@@ -55,3 +61,17 @@ async def get_current_user(
     if user is None:
         raise _unauthorized()
     return user
+
+
+async def get_usage_request(
+    user: User = Depends(get_current_user),
+) -> AsyncIterator[UsageRecord]:
+    """Apply local user ceilings and finalize a content-free metric event."""
+    try:
+        record = await observability.begin(user.id)
+    except UsageLimitError as exc:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from None
+    try:
+        yield record
+    finally:
+        await observability.finish(record)

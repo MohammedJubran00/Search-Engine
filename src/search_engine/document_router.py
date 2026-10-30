@@ -32,6 +32,7 @@ from src.search_engine.services.document_indexing_service import (
     DocumentIndexingQuotaError,
     DocumentIndexingService,
 )
+from src.search_engine.services.observability_service import observability
 
 router = APIRouter()
 
@@ -133,6 +134,7 @@ async def index_document(
         )
         if document.indexing_status == "completed":
             return DocumentResponse.model_validate(document)
+        await observability.record_embedding_request(user.id)
         await DocumentIndexingService(db).index(
             document_id=document_id,
             user_id=user.id,

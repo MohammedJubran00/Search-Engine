@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchCurrentUser, logout } from '../api/auth'
 import './Header.css'
 
-export default function Header() {
+export default function Header({ metricsOpen, onToggleMetrics }) {
   const [user, setUser] = useState(null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
 
@@ -58,6 +58,14 @@ export default function Header() {
               <p className="header__user-email">{user.email}</p>
             </div>
           ) : null}
+          <button
+            type="button"
+            className="header__logout"
+            aria-pressed={metricsOpen}
+            onClick={onToggleMetrics}
+          >
+            {metricsOpen ? 'Hide usage' : 'Usage'}
+          </button>
           <button
             type="button"
             className="header__logout"

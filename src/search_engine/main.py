@@ -51,6 +51,7 @@ class ResearchBudget:
     deadline: float
     search_count: int = 0
     failure_count: int = 0
+    search_seconds: float = 0.0
     stop_reason: str = "sufficient_evidence"
     cache: dict[str, str] = field(default_factory=dict)
 
@@ -80,6 +81,7 @@ def research_summary(budget: ResearchBudget) -> dict[str, int | str]:
     return {
         "search_count": budget.search_count,
         "search_failures": budget.failure_count,
+        "tavily_seconds": round(budget.search_seconds, 4),
         "termination_reason": reason,
     }
 
@@ -103,6 +105,7 @@ def web_search(query:str):
         return "Research stopped because the search-call budget was reached."
 
     budget.search_count += 1
+    started = time.perf_counter()
     try:
         result = tavily.invoke(query)
         results = normalize_web_results(result.get("results", []), query=query)
@@ -121,6 +124,8 @@ def web_search(query:str):
         budget.stop_reason = "partial_search_failure"
         logger.exception("Tavily web_search failed")
         return "Web search is currently unavailable. Tell the user the search failed."
+    finally:
+        budget.search_seconds += max(0.0, time.perf_counter() - started)
 
 
 def normalize_web_results(items, *, query: str = "") -> list[dict]:
@@ -212,7 +217,7 @@ def extract_web_sources(messages) -> list[dict[str, str | None]]:
 class AgentStreamMetadata:
     web_sources: tuple[dict[str, str | None], ...]
     research_plan: tuple[str, ...] = ()
-    research_summary: dict[str, int | str] | None = None
+    research_summary: dict[str, int | float | str] | None = None
     evidence_conflicts: tuple[dict, ...] = ()
 
 
@@ -234,7 +239,7 @@ class ResearchState(TypedDict, total=False):
     planning_failed: bool
     answer: object
     web_sources: list[dict[str, str | None]]
-    research_summary: dict[str, int | str]
+    research_summary: dict[str, int | float | str]
     evidence_conflicts: list[dict]
 
 

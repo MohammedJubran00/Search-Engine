@@ -103,11 +103,12 @@ class RagAnswerService:
         )
         if available < 1:
             return _insufficient_result(
-                retrieved_count=len(chunks),
+                retrieved_count=0,
                 question=question,
                 metadata={"reason": "context_budget_exhausted"},
             )
 
+        retrieval_started = time.perf_counter()
         chunks, strategy = await self._select_evidence(
             user_id=user_id,
             question=question,
@@ -116,9 +117,17 @@ class RagAnswerService:
             min_similarity=min_similarity,
             available_tokens=available,
         )
+        retrieval_seconds = time.perf_counter() - retrieval_started
         await self._release_retrieval_transaction()
         if not chunks:
-            return _insufficient_result(retrieved_count=0, question=question)
+            return _insufficient_result(
+                retrieved_count=0,
+                question=question,
+                metadata={
+                    "reason": "no_retrieved_evidence",
+                    "retrieval_seconds": retrieval_seconds,
+                },
+            )
 
         context_builder = (
             self._full_context_builder
@@ -139,7 +148,10 @@ class RagAnswerService:
             return _insufficient_result(
                 retrieved_count=len(chunks),
                 question=question,
-                metadata={"reason": "no_usable_evidence"},
+                metadata={
+                    "reason": "no_usable_evidence",
+                    "retrieval_seconds": retrieval_seconds,
+                },
             )
 
         user_prompt = (
@@ -179,6 +191,7 @@ class RagAnswerService:
                 "context_strategy": strategy,
                 "duplicates_skipped": context.duplicate_chunks_skipped,
                 "truncated_sources": context.truncated_source_count,
+                "retrieval_seconds": retrieval_seconds,
             },
         )
 
@@ -229,7 +242,7 @@ def _insufficient_result(
     *,
     retrieved_count: int,
     question: str,
-    metadata: dict[str, str] | None = None,
+    metadata: dict[str, str | float] | None = None,
 ) -> RagAnswerResult:
     answer = (
         "لا يمكن إثبات الإجابة من المستندات المتاحة."

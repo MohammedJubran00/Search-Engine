@@ -1,0 +1,160 @@
+# Real Gemini RAG benchmark
+
+This initial attempt failed readiness validation before generation. Embedding
+application retries were disabled, but underlying SDK wire attempts were not
+traced. Retained for failure transparency, not as a completed benchmark.
+
+Run status: failed
+
+Real Gemini embeddings and grounded answer generation, PostgreSQL/pgvector, and socket HTTP. Two generated single-page PDFs; three distinct questions. Sequential, no warmup and no application retries. All samples, including cold first calls, are retained. No Tavily or general/deep agent calls.
+
+| Measurement | N | Median ms | Range ms |
+|---|---:|---:|---:|
+| document_indexing | 2 | 399.82 | 334.38–465.25 |
+
+Document Chat emits one complete-answer delta: first content is answer availability, NOT native model TTFT. Persistence timing excludes the final commit. Total indexing includes it. SSE duration includes authentication, ownership validation, token counting, retrieval, generation and persistence. Direct retrieval includes ownership/readiness checks, real query embedding and SQL ordering.
+
+## Limitations
+
+Only 3 requests: no stable P95/P99, capacity, SLA, improvement percentage or real-world accuracy claim. The two-document corpus is deliberately tiny. Completion percentage is smoke-test completion, not answer accuracy. No billing price estimate; actual billing is external. Mock results are separate and cannot be used as a before/after baseline.
+
+## Full evidence
+
+```json
+{
+  "status": "failed",
+  "recorded_at": "2026-11-01T22:01:57.280882+00:00",
+  "mode": "REAL Gemini, local isolated generated data",
+  "config": {
+    "embedding_model": "models/gemini-embedding-001",
+    "generation_model": "gemini-3.5-flash-lite",
+    "dimensions": 1536,
+    "normalization": true,
+    "output_token_limit": 512,
+    "retries": 0,
+    "concurrency": 1,
+    "warmup": 0,
+    "top_k": 5
+  },
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.6"
+  },
+  "fixtures": [
+    {
+      "filename": "cedar.pdf",
+      "title": "Project Cedar: Restaurant Reservations",
+      "text": "Project Cedar automates table reservations. Its goals are to reduce booking errors, prevent double bookings, and improve the speed of confirming restaurant reservations."
+    },
+    {
+      "filename": "harbor.pdf",
+      "title": "Project Harbor: Warehouse Inventory",
+      "text": "Project Harbor tracks warehouse inventory. Its goals are to detect low stock, reduce stock counting errors, and notify warehouse staff when items need replenishment."
+    }
+  ],
+  "questions": [
+    "What are the main goals of Project Cedar?",
+    "How does Project Harbor help warehouse staff?",
+    "Which project prevents double bookings, and which detects low stock?"
+  ],
+  "uploads": [
+    {
+      "seconds": 0.0701547999997274,
+      "bytes": 1009,
+      "pages": 1
+    },
+    {
+      "seconds": 0.03042760000244016,
+      "bytes": 1008,
+      "pages": 1
+    }
+  ],
+  "indexing": [
+    {
+      "seconds": 0.46525109999493,
+      "chunks": 1,
+      "embedding_seconds": 0.42860600000130944,
+      "persistence_seconds": 0.020684500006609596,
+      "parse_extract_chunk_seconds": 0.003835399998934008
+    },
+    {
+      "seconds": 0.3343800000002375,
+      "chunks": 1,
+      "embedding_seconds": 0.3181283000012627,
+      "persistence_seconds": 0.007883399994170759,
+      "parse_extract_chunk_seconds": 0.0031655999991926365
+    }
+  ],
+  "retrieval": [],
+  "streams": [],
+  "calls": {
+    "embedding_operations": {
+      "count": 2,
+      "seconds": [
+        0.4280414999957429,
+        0.31768690000171773
+      ]
+    },
+    "generation_operations": {
+      "count": 0,
+      "seconds": []
+    },
+    "token_count_operations": {
+      "count": 0,
+      "seconds": []
+    }
+  },
+  "cleanup": true,
+  "failure_type": "RetrievalDocumentUnavailableError",
+  "memory": {
+    "working_set_bytes": 214073344,
+    "peak_process_lifetime_working_set_bytes": 214130688
+  },
+  "aggregates": {
+    "retrieval_total": {
+      "samples": 0,
+      "mean_ms": null,
+      "median_ms": null,
+      "min_ms": null,
+      "max_ms": null
+    },
+    "query_embedding": {
+      "samples": 0,
+      "mean_ms": null,
+      "median_ms": null,
+      "min_ms": null,
+      "max_ms": null
+    },
+    "vector_search": {
+      "samples": 0,
+      "mean_ms": null,
+      "median_ms": null,
+      "min_ms": null,
+      "max_ms": null
+    },
+    "document_indexing": {
+      "samples": 2,
+      "mean_ms": 399.81554999758373,
+      "median_ms": 399.81554999758373,
+      "min_ms": 334.3800000002375,
+      "max_ms": 465.25109999493
+    },
+    "first_content": {
+      "samples": 0,
+      "mean_ms": null,
+      "median_ms": null,
+      "min_ms": null,
+      "max_ms": null
+    },
+    "stream_duration": {
+      "samples": 0,
+      "mean_ms": null,
+      "median_ms": null,
+      "min_ms": null,
+      "max_ms": null
+    }
+  },
+  "stream_successes": 0,
+  "stream_requests": 0
+}
+```

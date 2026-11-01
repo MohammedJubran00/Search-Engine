@@ -1,0 +1,5 @@
+phase,sample,measurements_json
+uploads,1,"{""seconds"": 0.0701547999997274, ""bytes"": 1009, ""pages"": 1}"
+uploads,2,"{""seconds"": 0.03042760000244016, ""bytes"": 1008, ""pages"": 1}"
+indexing,1,"{""seconds"": 0.46525109999493, ""chunks"": 1, ""embedding_seconds"": 0.42860600000130944, ""persistence_seconds"": 0.020684500006609596, ""parse_extract_chunk_seconds"": 0.003835399998934008}"
+indexing,2,"{""seconds"": 0.3343800000002375, ""chunks"": 1, ""embedding_seconds"": 0.3181283000012627, ""persistence_seconds"": 0.007883399994170759, ""parse_extract_chunk_seconds"": 0.0031655999991926365}"

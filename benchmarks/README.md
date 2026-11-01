@@ -100,14 +100,55 @@ separately; a client cannot certify what provider a server actually used.
 
 ## Limits and next measurements
 
-The checked-in report is local mocked-provider evidence, not production evidence.
+The root reports are local mocked-provider evidence, not production evidence.
 CPU and Windows working set cover the application and harness in one process;
 the RAM peak covers process lifetime, not just measured batches. PostgreSQL and provider
 resources are excluded. GPU, forced stream interruption, separate
 real LangGraph execution latency and independently timed parse versus chunking
-are not measured. No ANN baseline exists. Real embedding and generation timings
-remain unexecuted. No manually verified retrieval labels were supplied.
+are not measured by the mock runner. No ANN baseline exists. No manually
+verified retrieval labels were supplied.
 
 The tiny fixture cannot establish scale behavior. Increase synthetic dataset
 size before testing database scaling, and gather repeated runs on a quiet host
 before proposing optimizations. Do not infer speedups from these smoke samples.
+
+## Real Gemini small-sample benchmark
+
+`live_gemini.py` runs separately from the mock suite and writes to
+`reports/gemini-live/`. It uses actual configured Gemini clients with no response
+substitution: two generated one-page PDFs, three direct retrieval questions,
+and up to three sequential grounded Document Chat requests over socket HTTP.
+
+```powershell
+uv run python -m benchmarks.live_gemini --allow-paid --requests 2
+uv run pytest -q tests/test_benchmark_metrics.py tests/test_live_benchmark.py
+```
+
+This command incurs provider usage. It creates a fresh private PostgreSQL schema
+with ORM tables (no application migrations), a temporary upload directory and a
+new test user. Its queue is invisible to workers using the public schema.
+It removes only that generated schema and its own temporary files afterwards.
+Configured models and vector dimensions are retained. Output is limited to 512
+tokens, application embedding retries are disabled, and generation SDK attempts
+are set to 1 (one initial request, no retry). The installed SDK treats attempts=0
+as defaults, not as disabling retries. Embedding SDK internal wire attempts are
+not measured. Requests are sequential. Token-count operations
+are real too and reported separately; operation counts are not billing receipts.
+
+No warmup calls are made. Cold starts remain in the samples. Timers use monotonic
+`perf_counter`; instrumentation wraps real method calls without replacing their
+results. The HTTP stream is read incrementally, ignoring metadata for first-content
+timing and requiring the final done event. Document Chat exposes a completed-answer
+delta, so its first-content latency must not be described as native model TTFT.
+Only median/range are emphasized for three samples. No robust tail-latency,
+production capacity, quality-accuracy, or improvement percentage is claimed.
+
+The initial shared-schema attempt is retained separately in
+`reports/gemini-live-attempt1/`: its two real embeddings succeeded but retrieval
+failed readiness validation before generation. Shared worker interference was
+suspected; subsequent runs use strict schema isolation. The second attempt is
+retained in `reports/gemini-live-attempt2/`: real retrieval succeeded but its first
+generation failed. Its configured retries=0 did not disable SDK default retries.
+Final evidence and actual success/failure counts are in `reports/gemini-live/`.
+Do not combine attempts or select their fastest samples. Failures remain part
+of the overall reliability history and are not erased by a subsequent success.

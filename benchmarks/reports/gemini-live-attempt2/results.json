@@ -1,0 +1,181 @@
+{
+  "status": "failed",
+  "sdk_retry_caveat": "Configured generation retries=0 restored SDK defaults; this attempt does not establish a no-retry transport measurement. Counts are logical SDK operations, not wire attempts.",
+  "recorded_at": "2026-11-01T22:03:55.227922+00:00",
+  "mode": "REAL Gemini, local isolated generated data",
+  "database_isolation": "Fresh private schema with separate queue; removed after run",
+  "config": {
+    "embedding_model": "models/gemini-embedding-001",
+    "generation_model": "gemini-3.5-flash-lite",
+    "dimensions": 1536,
+    "normalization": true,
+    "output_token_limit": 512,
+    "retries": 0,
+    "concurrency": 1,
+    "warmup": 0,
+    "top_k": 5
+  },
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.6"
+  },
+  "fixtures": [
+    {
+      "filename": "cedar.pdf",
+      "title": "Project Cedar: Restaurant Reservations",
+      "text": "Project Cedar automates table reservations. Its goals are to reduce booking errors, prevent double bookings, and improve the speed of confirming restaurant reservations."
+    },
+    {
+      "filename": "harbor.pdf",
+      "title": "Project Harbor: Warehouse Inventory",
+      "text": "Project Harbor tracks warehouse inventory. Its goals are to detect low stock, reduce stock counting errors, and notify warehouse staff when items need replenishment."
+    }
+  ],
+  "questions": [
+    "What are the main goals of Project Cedar?",
+    "How does Project Harbor help warehouse staff?",
+    "Which project prevents double bookings, and which detects low stock?"
+  ],
+  "uploads": [
+    {
+      "seconds": 0.0667920000050799,
+      "bytes": 1010,
+      "pages": 1
+    },
+    {
+      "seconds": 0.025694399999338202,
+      "bytes": 1008,
+      "pages": 1
+    }
+  ],
+  "indexing": [
+    {
+      "seconds": 0.4605971999990288,
+      "chunks": 1,
+      "embedding_seconds": 0.4254774000000907,
+      "persistence_seconds": 0.01928339999722084,
+      "parse_extract_chunk_seconds": 0.0036552999954437837
+    },
+    {
+      "seconds": 0.34080600000015693,
+      "chunks": 1,
+      "embedding_seconds": 0.3251056000008248,
+      "persistence_seconds": 0.006895099999383092,
+      "parse_extract_chunk_seconds": 0.004085100001248065
+    }
+  ],
+  "retrieval": [
+    {
+      "seconds": 0.3468390999987605,
+      "embedding_seconds": 0.3325237999961246,
+      "vector_search_seconds": 0.00691470000310801,
+      "retrieved_chunks": 2
+    },
+    {
+      "seconds": 0.3279045000017504,
+      "embedding_seconds": 0.3211223999969661,
+      "vector_search_seconds": 0.0030217000021366403,
+      "retrieved_chunks": 2
+    },
+    {
+      "seconds": 0.3203758999952697,
+      "embedding_seconds": 0.31213739999657264,
+      "vector_search_seconds": 0.004042599997774232,
+      "retrieved_chunks": 2
+    }
+  ],
+  "streams": [
+    {
+      "seconds": 46.639100600004895,
+      "ok": false,
+      "chunks": 0,
+      "first_event_seconds": 0.15638370000669966,
+      "ttft_seconds": null
+    }
+  ],
+  "calls": {
+    "embedding_operations": {
+      "count": 6,
+      "seconds": [
+        0.4249788000015542,
+        0.3245506999955978,
+        0.33222599999862723,
+        0.3208340999990469,
+        0.3118432000046596,
+        0.3815944000016316
+      ]
+    },
+    "generation_operations": {
+      "count": 1,
+      "seconds": [
+        44.6805108999979
+      ]
+    },
+    "token_count_operations": {
+      "count": 9,
+      "seconds": [
+        0.20001919999776874,
+        0.287284300000465,
+        0.1047913999937009,
+        0.11798269999417244,
+        0.10853750000387663,
+        0.11363819999678526,
+        0.10723150000558235,
+        0.1608459000053699,
+        0.21722150000277907
+      ]
+    }
+  },
+  "cleanup": true,
+  "failure_type": "RuntimeError",
+  "memory": {
+    "working_set_bytes": 221298688,
+    "peak_process_lifetime_working_set_bytes": 221556736
+  },
+  "aggregates": {
+    "retrieval_total": {
+      "samples": 3,
+      "mean_ms": 331.70649999859353,
+      "median_ms": 327.9045000017504,
+      "min_ms": 320.3758999952697,
+      "max_ms": 346.8390999987605
+    },
+    "query_embedding": {
+      "samples": 3,
+      "mean_ms": 321.9278666632211,
+      "median_ms": 321.1223999969661,
+      "min_ms": 312.13739999657264,
+      "max_ms": 332.5237999961246
+    },
+    "vector_search": {
+      "samples": 3,
+      "mean_ms": 4.659666667672961,
+      "median_ms": 4.042599997774232,
+      "min_ms": 3.0217000021366403,
+      "max_ms": 6.91470000310801
+    },
+    "document_indexing": {
+      "samples": 2,
+      "mean_ms": 400.7015999995929,
+      "median_ms": 400.7015999995929,
+      "min_ms": 340.8060000001569,
+      "max_ms": 460.5971999990288
+    },
+    "first_content": {
+      "samples": 0,
+      "mean_ms": null,
+      "median_ms": null,
+      "min_ms": null,
+      "max_ms": null
+    },
+    "stream_duration": {
+      "samples": 1,
+      "mean_ms": 46639.100600004895,
+      "median_ms": 46639.100600004895,
+      "min_ms": 46639.100600004895,
+      "max_ms": 46639.100600004895
+    }
+  },
+  "stream_successes": 0,
+  "stream_requests": 1
+}

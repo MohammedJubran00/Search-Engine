@@ -1,0 +1,9 @@
+phase,sample,measurements_json
+uploads,1,"{""seconds"": 0.0667920000050799, ""bytes"": 1010, ""pages"": 1}"
+uploads,2,"{""seconds"": 0.025694399999338202, ""bytes"": 1008, ""pages"": 1}"
+indexing,1,"{""seconds"": 0.4605971999990288, ""chunks"": 1, ""embedding_seconds"": 0.4254774000000907, ""persistence_seconds"": 0.01928339999722084, ""parse_extract_chunk_seconds"": 0.0036552999954437837}"
+indexing,2,"{""seconds"": 0.34080600000015693, ""chunks"": 1, ""embedding_seconds"": 0.3251056000008248, ""persistence_seconds"": 0.006895099999383092, ""parse_extract_chunk_seconds"": 0.004085100001248065}"
+retrieval,1,"{""seconds"": 0.3468390999987605, ""embedding_seconds"": 0.3325237999961246, ""vector_search_seconds"": 0.00691470000310801, ""retrieved_chunks"": 2}"
+retrieval,2,"{""seconds"": 0.3279045000017504, ""embedding_seconds"": 0.3211223999969661, ""vector_search_seconds"": 0.0030217000021366403, ""retrieved_chunks"": 2}"
+retrieval,3,"{""seconds"": 0.3203758999952697, ""embedding_seconds"": 0.31213739999657264, ""vector_search_seconds"": 0.004042599997774232, ""retrieved_chunks"": 2}"
+streams,1,"{""seconds"": 46.639100600004895, ""ok"": false, ""chunks"": 0, ""first_event_seconds"": 0.15638370000669966, ""ttft_seconds"": null}"

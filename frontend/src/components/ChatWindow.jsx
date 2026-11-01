@@ -14,7 +14,7 @@ const DOCUMENT_EXAMPLE_QUERIES = [
   'Which recommendations are supported by the documents?',
 ]
 
-export default function ChatWindow({ messages, isLoading, onExampleSelect, mode, researchMode }) {
+export default function ChatWindow({ messages, isLoading, onExampleSelect, mode, researchMode, attachments = [], onRemoveAttachment }) {
   const endRef = useRef(null)
   const isEmpty = messages.length === 0 && !isLoading
   const lastMessage = messages[messages.length - 1]
@@ -34,7 +34,7 @@ export default function ChatWindow({ messages, isLoading, onExampleSelect, mode,
 
   return (
     <section className="chat-window" aria-live="polite">
-      {isEmpty ? (
+      {isEmpty && !attachments.length ? (
         <div className="chat-window__welcome">
           <p className="chat-window__eyebrow">Ready when you are</p>
           <h2 className="chat-window__heading">Ask a question. Get a sourced answer.</h2>
@@ -62,6 +62,12 @@ export default function ChatWindow({ messages, isLoading, onExampleSelect, mode,
         <div className="chat-window__messages">
           {messages.map((message) => (
             <MessageBubble key={message.id} message={message} />
+          ))}
+          {attachments.filter((item) => !messages.some((message) => message.attachments?.some((attached) => attached.document_id === item.id))).map((item) => (
+            <div className="chat-window__file" key={item.id}>
+              <strong>{item.original_filename}</strong><span>{item.indexing_status === 'completed' ? 'Ready' : 'Preparing…'}</span>
+              <button type="button" onClick={() => onRemoveAttachment(item.id)}>Remove</button>
+            </div>
           ))}
           {waitingForFirstToken ? <LoadingIndicator message={progressMessage} /> : null}
           <div ref={endRef} />

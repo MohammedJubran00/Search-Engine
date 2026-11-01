@@ -1,0 +1,7 @@
+.app-dialog { width:min(440px, calc(100% - 32px)); padding:24px; color:var(--text); background:var(--bg-elevated); border:1px solid var(--border); border-radius:16px; }
+.app-dialog::backdrop { background:#0009; backdrop-filter:blur(4px); }
+.app-dialog h2 { margin:0 0 16px; font-size:1.1rem; overflow-wrap:anywhere; }
+.app-dialog input { width:100%; padding:12px; color:var(--text); background:var(--bg-input); border:1px solid var(--border); border-radius:8px; }
+.app-dialog footer { display:flex; justify-content:flex-end; gap:10px; margin-top:24px; }
+.app-dialog button { padding:10px 18px; border:1px solid var(--border); border-radius:8px; background:var(--bg-panel); color:var(--text); }
+.app-dialog button[type=submit] { color:#06201b; background:var(--accent); }

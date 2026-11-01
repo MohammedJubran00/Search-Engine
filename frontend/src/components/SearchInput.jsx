@@ -18,7 +18,6 @@ export default function SearchInput({
   documents,
   attachedDocumentIds,
   onAttachDocument,
-  onRemoveDocument,
   onDocumentUpsert,
 }) {
   const [value, setValue] = useState('')
@@ -103,7 +102,7 @@ export default function SearchInput({
 
   return (
     <form className="search-input" onSubmit={(event) => { event.preventDefault(); void handleSubmit() }}>
-      {pendingFiles.length || attachedDocuments.length ? (
+      {pendingFiles.length ? (
         <div className="search-input__attachments" aria-label="Message attachments">
           {pendingFiles.map((item) => (
             <article key={item.key} className="attachment-card">
@@ -116,16 +115,6 @@ export default function SearchInput({
               <button type="button" aria-label={`Remove ${item.file.name}`} disabled={item.state === 'uploading'} onClick={() => setPendingFiles((current) => current.filter((entry) => entry.key !== item.key))}>×</button>
             </article>
           ))}
-          {attachedDocuments.map((document) => (
-            <article key={document.id} className="attachment-card">
-              <span className="attachment-card__icon">{fileKind(document.original_filename)}</span>
-              <span className="attachment-card__text">
-                <strong>{document.original_filename}</strong>
-                <small>{formatDocumentBytes(document.file_size)} · {document.indexing_status === 'completed' ? 'Indexed and ready' : document.indexing_status === 'processing' ? 'Indexing…' : document.indexing_status === 'queued' ? 'Queued for indexing' : document.indexing_status === 'failed' ? 'Indexing failed' : 'Uploaded, not indexed'}</small>
-              </span>
-              <button type="button" className="attachment-card__remove" aria-label={`Remove ${document.original_filename}`} title="Remove attachment" onClick={() => onRemoveDocument(document.id)}>Remove</button>
-            </article>
-          ))}
         </div>
       ) : null}
       {composerStatus ? <p className="search-input__status" role="status">{composerStatus}</p> : null}
@@ -136,12 +125,6 @@ export default function SearchInput({
           {menuOpen ? (
             <div className="search-input__attach-menu">
               <button type="button" onClick={() => fileInputRef.current?.click()}>Upload PDF, DOCX, or TXT</button>
-              {documents.length ? <span>Existing documents</span> : null}
-              {documents.map((document) => (
-                <button type="button" key={document.id} disabled={attachedDocumentIds.includes(document.id)} onClick={() => { onAttachDocument(document.id); setMenuOpen(false) }}>
-                  {document.original_filename}<small>{document.indexing_status === 'completed' ? 'Ready' : 'Needs preparation'}</small>
-                </button>
-              ))}
             </div>
           ) : null}
           <input ref={fileInputRef} className="visually-hidden" type="file" multiple accept={DOCUMENT_FILE_ACCEPT} onChange={(event) => handleFiles(event.target.files)} />

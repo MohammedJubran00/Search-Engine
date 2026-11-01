@@ -7,6 +7,7 @@ loop. No chunking, embedding, or retrieval occurs here.
 """
 
 import asyncio
+import hashlib
 import logging
 import uuid
 from dataclasses import dataclass
@@ -64,7 +65,7 @@ class UploadResult:
     """Persisted metadata plus extracted text for internal/future phases."""
 
     document: Document
-    parsed: ParsedDocument
+    parsed: ParsedDocument | None
 
 
 class DocumentService:
@@ -107,6 +108,13 @@ class DocumentService:
                 target,
                 settings.rag_max_upload_bytes,
             )
+            digest = await asyncio.to_thread(_file_digest, target.temporary_path)
+            for existing in await self._documents.list_for_user(user_id):
+                if existing.file_size != file_size or existing.content_type != content_type:
+                    continue
+                path = self._storage.path_for(existing.storage_path)
+                if path.is_file() and await asyncio.to_thread(_file_digest, path) == digest:
+                    return UploadResult(document=existing, parsed=None)
             document = await self._documents.create(
                 user_id=user_id,
                 original_filename=filename,
@@ -191,6 +199,11 @@ class DocumentService:
 
         if quarantined is not None:
             await asyncio.to_thread(self._storage.remove_path, quarantined[1])
+
+
+def _file_digest(path: Path) -> bytes:
+    with path.open('rb') as source:
+        return hashlib.file_digest(source, 'sha256').digest()
 
 
 def _validate_upload_metadata(upload: UploadFile) -> tuple[str, str, str]:

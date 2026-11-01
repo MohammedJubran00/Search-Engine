@@ -73,7 +73,8 @@ async def upload_document(
         ) from None
     finally:
         await file.close()
-    await IndexingQueueService(db).enqueue(document_id=result.document.id, user_id=user.id)
+    if result.document.indexing_status not in {'completed', 'processing', 'queued'}:
+        await IndexingQueueService(db).enqueue(document_id=result.document.id, user_id=user.id)
     await db.commit()
     refreshed = await DocumentService(db).get_for_user(
         document_id=result.document.id, user_id=user.id

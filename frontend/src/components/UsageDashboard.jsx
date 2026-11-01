@@ -19,7 +19,7 @@ export default function UsageDashboard() {
       {error ? <p className="view-error">{error}</p> : null}
       {!metrics ? <p>Loading usage…</p> : <>
         <dl className="usage__grid">
-          <Metric label="Total API requests" value={metrics.request_count} />
+          <Metric label="Chat requests this month" value={metrics.request_count} />
           <Metric label="Successful" value={metrics.successful_requests} />
           <Metric label="Failed" value={metrics.failed_requests} />
           <Metric label="Average latency" value={`${metrics.average_response_seconds}s`} />

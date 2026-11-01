@@ -82,6 +82,10 @@
   gap: 16px;
   padding: 12px 0 8px;
 }
+.chat-window__file { display:grid; flex-shrink:0; gap:8px; align-self:flex-end; width:min(100%,400px); padding:16px; border:1px solid var(--border); border-radius:12px; background:var(--bg-panel); }
+.chat-window__file strong { overflow-wrap:anywhere; }
+.chat-window__file span { color:var(--text-muted); font-size:.8rem; }
+.chat-window__file button { justify-self:end; background:transparent; color:var(--danger); border:1px solid var(--danger-border); padding:6px 12px; border-radius:7px; }
 
 @media (max-width: 640px) {
   .chat-window {

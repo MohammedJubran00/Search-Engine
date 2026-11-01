@@ -42,7 +42,7 @@ class UsageRepository:
             select(UsageEvent).where(
                 UsageEvent.user_id == user_id,
                 UsageEvent.created_at >= month_start,
-            ).order_by(UsageEvent.created_at.desc()).limit(5000)
+            ).order_by(UsageEvent.created_at.desc())
         )).scalars().all())
         platform = [event for event in events if event.provider == "platform"]
         provider = [event for event in events if event.provider != "platform"]

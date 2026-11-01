@@ -38,8 +38,9 @@ def test_conversation_crud_search_and_user_isolation(client: TestClient) -> None
 
     listing = client.get("/api/conversations?search=vector", headers=owner)
     assert listing.status_code == 200
-    assert listing.json()["total"] == 1
-    assert listing.json()["items"][0]["mode"] == "deep"
+    assert listing.json()["total"] == 0  # Empty drafts do not belong in history.
+    detail = client.get(f"/api/conversations/{conversation_id}", headers=owner)
+    assert detail.json()["mode"] == "deep"
     assert client.get("/api/conversations?search=vector", headers=other).json()["total"] == 0
     assert client.get(f"/api/conversations/{conversation_id}", headers=other).status_code == 404
 

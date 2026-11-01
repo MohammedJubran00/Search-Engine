@@ -120,6 +120,22 @@ def _upload(filename: str, content_type: str, data: bytes) -> UploadFile:
     )
 
 
+def test_identical_upload_reuses_only_owners_document(tmp_path: Path) -> None:
+    async def exercise() -> None:
+        repository = FakeDocumentRepository()
+        service = DocumentService(FakeSession(), repository=repository, storage=DocumentStorage(tmp_path))
+        owner = uuid.uuid4()
+        original = await service.upload(user_id=owner, upload=_upload('one.txt', TXT_CONTENT_TYPE, b'Useful original text'))
+        duplicate = await service.upload(user_id=owner, upload=_upload('renamed.txt', TXT_CONTENT_TYPE, b'Useful original text'))
+        foreign = await service.upload(user_id=uuid.uuid4(), upload=_upload('one.txt', TXT_CONTENT_TYPE, b'Useful original text'))
+        assert duplicate.document.id == original.document.id
+        assert duplicate.parsed is None
+        assert foreign.document.id != original.document.id
+        assert len(repository.documents) == 2
+        assert not list(tmp_path.glob('*.uploading'))
+    asyncio.run(exercise())
+
+
 def _pdf_bytes(*page_texts: str) -> bytes:
     document = pymupdf.open()
     for text in page_texts:

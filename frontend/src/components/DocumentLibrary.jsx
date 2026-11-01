@@ -5,6 +5,7 @@ import {
 } from '../api/documents'
 import { DOCUMENT_FILE_ACCEPT, validateDocumentFile } from '../api/documentFiles'
 import './DocumentLibrary.css'
+import { confirmAction } from './AppDialog'
 
 export default function DocumentLibrary({ onDocumentsChanged }) {
   const [page, setPage] = useState({ items: [], total: 0, offset: 0, limit: 24 })
@@ -61,7 +62,7 @@ export default function DocumentLibrary({ onDocumentsChanged }) {
   }
 
   async function remove(item) {
-    if (!window.confirm(`Delete “${item.original_filename}”?`)) return
+    if (!await confirmAction(`Delete “${item.original_filename}”?`)) return
     await deleteDocument(item.id)
     await load(page.offset)
   }

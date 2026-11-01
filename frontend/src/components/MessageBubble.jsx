@@ -116,7 +116,7 @@ export default function MessageBubble({ message }) {
           ))}
         </div>
       ) : null}
-      {!message.isError && message.mode === 'documents' ? (
+      {!isUser && !message.isError && message.mode === 'documents' ? (
         <div className="message__grounding">
           <span className="message__mode">
             {message.status === 'insufficient_evidence'
@@ -124,22 +124,16 @@ export default function MessageBubble({ message }) {
               : 'Document-grounded'}
           </span>
           {!isUser && Array.isArray(message.citations) && message.citations.length ? (
-            <ol className="message__citations" aria-label="Document citations">
-              {message.citations.map((citation) => (
+            <details><summary>Sources ({new Set(message.citations.map((item) => item.filename)).size})</summary><ol className="message__citations" aria-label="Document citations">
+              {message.citations.filter((item, index, all) => all.findIndex((other) => other.filename === item.filename) === index).map((citation) => (
                 <li key={`${citation.label}-${citation.chunk_id}`}>
                   <strong>[{citation.label}] {citation.filename}</strong>
                   <span>
                     {citation.page_number == null ? 'Page unavailable' : `Page ${citation.page_number}`}
                   </span>
-                  {citation.evidence_excerpt ? (
-                    <details>
-                      <summary>View evidence excerpt</summary>
-                      <q>{citation.evidence_excerpt}</q>
-                    </details>
-                  ) : null}
                 </li>
               ))}
-            </ol>
+            </ol></details>
           ) : null}
         </div>
       ) : null}

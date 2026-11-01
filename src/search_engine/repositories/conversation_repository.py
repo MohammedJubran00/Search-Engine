@@ -17,6 +17,7 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.search_engine.models.conversation import Conversation
+from src.search_engine.models.message import Message
 
 
 class ConversationRepository:
@@ -39,7 +40,7 @@ class ConversationRepository:
         """Return this user's conversations, newest first."""
         result = await self._session.execute(
             select(Conversation)
-            .where(Conversation.user_id == user_id)
+            .where(Conversation.user_id == user_id, select(Message.id).where(Message.conversation_id == Conversation.id).exists())
             .order_by(Conversation.updated_at.desc())
         )
         return list(result.scalars().all())
@@ -52,7 +53,7 @@ class ConversationRepository:
         limit: int,
         offset: int,
     ) -> tuple[list[Conversation], int]:
-        predicate = [Conversation.user_id == user_id]
+        predicate = [Conversation.user_id == user_id, select(Message.id).where(Message.conversation_id == Conversation.id).exists()]
         if search:
             predicate.append(Conversation.title.ilike(f"%{search}%"))
         rows = await self._session.execute(

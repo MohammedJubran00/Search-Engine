@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { streamChatQuery } from './api/chat'
 import {
-  createConversation, deleteConversation, fetchConversation,
+  deleteConversation, fetchConversation,
   fetchConversations, renameConversation, updateConversation, updateConversationDocuments,
 } from './api/conversations'
 import { fetchDocuments } from './api/documents'
@@ -14,6 +14,7 @@ import SettingsPage from './components/SettingsPage'
 import Sidebar from './components/Sidebar'
 import UsageDashboard from './components/UsageDashboard'
 import './App.css'
+import { confirmAction, promptValue } from './components/AppDialog'
 
 let messageSeq = 0
 const ACTIVE_CONVERSATION_KEY = 'research-assistant.active-conversation'
@@ -87,21 +88,20 @@ export default function App() {
 
   async function newChat() {
     if (loadingRef.current) abortRef.current?.abort()
-    const mode = researchMode === 'deep' ? 'deep' : chatMode
-    const item = await createConversation(mode)
-    setConversations((current) => [item, ...current]); conversationRef.current = item.id
-    window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, item.id)
-    setConversationId(item.id); setMessages([]); setSelectedDocumentIds([]); setView('chat')
+    restoredConversationRef.current = true
+    conversationRef.current = null
+    window.localStorage.removeItem(ACTIVE_CONVERSATION_KEY)
+    setConversationId(null); setMessages([]); setSelectedDocumentIds([]); setView('chat')
   }
 
   async function handleRename(item) {
-    const title = window.prompt('Rename conversation', item.title)
+    const title = await promptValue('Rename conversation', item.title)
     if (!title?.trim()) return
     const updated = await renameConversation(item.id, title.trim())
     setConversations((current) => current.map((entry) => entry.id === item.id ? updated : entry))
   }
   async function handleDelete(item) {
-    if (!window.confirm(`Delete “${item.title}”?`)) return
+    if (!await confirmAction(`Delete “${item.title}”?`)) return
     await deleteConversation(item.id)
     setConversations((current) => current.filter((entry) => entry.id !== item.id))
     if (conversationRef.current === item.id) {
@@ -170,7 +170,7 @@ export default function App() {
         {view === 'documents' ? <DocumentLibrary onDocumentsChanged={documentsChanged} /> : null}
         {view === 'usage' ? <UsageDashboard /> : null}
         {view === 'settings' ? <SettingsPage onPreferences={applyPreferences} /> : null}
-        {view === 'chat' ? <div className="chat-workspace"><header className="workspace__top"><div><span>{researchMode === 'deep' ? 'Deep Research' : chatMode === 'documents' ? 'Document Chat' : 'General Chat'}</span><small>{conversationId ? 'Persistent conversation' : 'Start a new conversation'}</small></div>{isLoading ? <button type="button" onClick={() => abortRef.current?.abort()}>Stop generating</button> : null}</header><ChatModeSelector mode={chatMode} researchMode={researchMode} selectedCount={selectedDocumentIds.length} onSelect={(mode, nextResearchMode) => void selectChatMode(mode, nextResearchMode)} disabled={isLoading} /><ChatWindow messages={messages} isLoading={isLoading} onExampleSelect={submit} mode={chatMode} researchMode={researchMode} /><SearchInput onSubmit={submit} onStop={() => abortRef.current?.abort()} disabled={isLoading} documents={documents} attachedDocumentIds={selectedDocumentIds} onAttachDocument={(id) => { void selectChatMode('documents', 'standard'); void selectionChanged([...new Set([...selectedDocumentIds, id])]) }} onRemoveDocument={(id) => void selectionChanged(selectedDocumentIds.filter((value) => value !== id))} onDocumentUpsert={(document) => setDocuments((current) => [document, ...current.filter((item) => item.id !== document.id)])} /></div> : null}
+{view === 'chat' ? <div className="chat-workspace"><header className="workspace__top"><div><span>{researchMode === 'deep' ? 'Deep Research' : chatMode === 'documents' ? 'Document Chat' : 'General Chat'}</span><small>{conversationId ? 'Persistent conversation' : 'Start a new conversation'}</small></div>{isLoading ? <button type="button" onClick={() => abortRef.current?.abort()}>Stop generating</button> : null}</header><ChatModeSelector mode={chatMode} researchMode={researchMode} selectedCount={selectedDocumentIds.length} onSelect={(mode, nextResearchMode) => void selectChatMode(mode, nextResearchMode)} disabled={isLoading} /><ChatWindow attachments={documents.filter((item) => selectedDocumentIds.includes(item.id))} onRemoveAttachment={(id) => void selectionChanged(selectedDocumentIds.filter((value) => value !== id))} messages={messages} isLoading={isLoading} onExampleSelect={submit} mode={chatMode} researchMode={researchMode} /><SearchInput onSubmit={submit} onStop={() => abortRef.current?.abort()} disabled={isLoading} documents={documents} attachedDocumentIds={selectedDocumentIds} onAttachDocument={(id) => { void selectChatMode('documents', 'standard'); void selectionChanged([...new Set([...selectedDocumentIds, id])]) }} onRemoveDocument={(id) => void selectionChanged(selectedDocumentIds.filter((value) => value !== id))} onDocumentUpsert={(document) => setDocuments((current) => [document, ...current.filter((item) => item.id !== document.id)])} /></div> : null}
       </main>
     </div>
   )

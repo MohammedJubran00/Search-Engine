@@ -93,7 +93,7 @@ export default function DocumentPanel({
   }
 
   async function handleDelete(document) {
-    const confirmed = window.confirm(`Delete “${document.original_filename}”?`)
+    const confirmed = await confirmAction(`Delete “${document.original_filename}”?`)
     if (!confirmed || deletingId) return
 
     setDeletingId(document.id)
@@ -235,3 +235,4 @@ export default function DocumentPanel({
     </section>
   )
 }
+import { confirmAction } from './AppDialog'

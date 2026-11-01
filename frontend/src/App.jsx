@@ -119,12 +119,13 @@ export default function App() {
     const ids = requestMode === 'documents' ? selectedDocumentIds : []
     setMessages((current) => [...current, createMessage({ role: 'user', content: trimmed, mode: requestMode, attachments: documents.filter((item) => ids.includes(item.id)).map((item) => ({ document_id: item.id, filename: item.original_filename, file_size: item.file_size, indexing_status: item.indexing_status })) })])
     let assistantId = null
+    let streamedText = ''
     const upsert = (partial) => {
       if (!assistantId) { const item = createMessage({ role: 'assistant', content: '', ...partial }); assistantId = item.id; setMessages((current) => [...current, item]); return }
       setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, ...partial } : item))
     }
     try {
-      await streamChatQuery(trimmed, (text) => upsert({ content: text, mode: requestMode }), {
+      await streamChatQuery(trimmed, (text) => { streamedText = text; upsert({ content: text, mode: requestMode }) }, {
         conversationId: conversationRef.current, mode: requestMode, documentIds: ids,
         researchMode, responseDepth: preferences.response_depth,
         responseLanguage: preferences.response_language, signal: controller.signal,
@@ -133,7 +134,7 @@ export default function App() {
       })
       await loadConversations(); return true
     } catch (error) {
-      if (error?.name === 'AbortError') upsert({ content: 'Generation stopped.', isError: true })
+      if (error?.name === 'AbortError') upsert({ content: streamedText ? `${streamedText}\n\nGeneration stopped. This partial answer was not saved.` : 'Generation stopped.', isError: true })
       else upsert({ content: error instanceof Error ? error.message : 'Request failed.', isError: true })
       return false
     } finally { loadingRef.current = false; setIsLoading(false); abortRef.current = null }

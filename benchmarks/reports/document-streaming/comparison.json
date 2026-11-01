@@ -1,0 +1,60 @@
+{
+  "comparable": true,
+  "equivalence_checks": {
+    "corpus": true,
+    "prompts": true,
+    "questions": true,
+    "configuration": true,
+    "environment": true,
+    "dependencies": true,
+    "samples": true,
+    "completed": true
+  },
+  "measurements": {
+    "first_content": {
+      "before_median_ms": 4695.697249997465,
+      "after_median_ms": 1780.487300002278,
+      "before_n": 2,
+      "after_n": 2,
+      "observed_reduction_percent": 62.08257889702665
+    },
+    "stream_duration": {
+      "before_median_ms": 4696.151599997393,
+      "after_median_ms": 1931.8026500004635,
+      "before_n": 2,
+      "after_n": 2,
+      "observed_reduction_percent": 58.86413355988047
+    },
+    "retrieval_total": {
+      "before_median_ms": 324.1717500022787,
+      "after_median_ms": 319.37694999942323,
+      "before_n": 6,
+      "after_n": 6,
+      "observed_reduction_percent": 1.4790924881090894
+    },
+    "query_embedding": {
+      "before_median_ms": 315.43244999920717,
+      "after_median_ms": 311.9565999986662,
+      "before_n": 6,
+      "after_n": 6,
+      "observed_reduction_percent": 1.1019316498824694
+    },
+    "vector_search": {
+      "before_median_ms": 2.638999998453073,
+      "after_median_ms": 2.6743000016722362,
+      "before_n": 6,
+      "after_n": 6,
+      "observed_reduction_percent": -1.3376280121203172
+    }
+  },
+  "before_failed_requests": 0,
+  "after_failed_requests": 0,
+  "before_token_count_operations": 36,
+  "after_token_count_operations": 6,
+  "after_content_chunks": [
+    2,
+    2
+  ],
+  "exact_persistence_verified": true,
+  "citations_verified": true
+}

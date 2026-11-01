@@ -1,0 +1,328 @@
+# Real Gemini RAG benchmark
+
+Run status: completed
+
+Real Gemini embeddings and grounded answer generation, PostgreSQL/pgvector, and socket HTTP. The exact generated corpus, page sizes, retrieval queries and answer request counts are recorded below. Sequential, no warmup; application embedding retries disabled, generation SDK attempts=1. All samples, including cold first calls, are retained. No Tavily or general/deep agent calls.
+
+| Measurement | N | Median ms | Range ms |
+|---|---:|---:|---:|
+| retrieval_total | 6 | 319.38 | 307.46–329.54 |
+| query_embedding | 6 | 311.96 | 302.70–324.67 |
+| vector_search | 6 | 2.67 | 2.58–4.70 |
+| document_indexing | 3 | 508.18 | 450.94–1193.56 |
+| first_content | 2 | 1780.49 | 1630.96–1930.01 |
+| stream_duration | 2 | 1931.80 | 1754.78–2108.82 |
+
+Document Chat decodes the answer field from live Gemini chunks. Partial text is provisional; final JSON and citations must validate before persistence. Persistence timing excludes the final commit. Total indexing includes it. SSE duration includes authentication, ownership validation, token counting, retrieval, generation and persistence. Direct retrieval includes ownership/readiness checks, real query embedding and SQL ordering.
+
+## Limitations
+
+At most 3 answer requests: no stable P95/P99, capacity, SLA, improvement percentage or real-world accuracy claim. The two-document corpus is deliberately tiny. Completion percentage is smoke-test completion, not answer accuracy. No billing price estimate; actual billing is external. Mock results are separate and cannot be used as a before/after baseline.
+
+## Full evidence
+
+```json
+{
+  "status": "completed",
+  "recorded_at": "2026-11-01T23:24:31.426197+00:00",
+  "streaming_mode": "native_answer_stream",
+  "mode": "REAL Gemini, local isolated generated data",
+  "database_isolation": "Fresh private schema with separate queue; removed after run",
+  "config": {
+    "embedding_model": "models/gemini-embedding-001",
+    "generation_model": "gemini-3.5-flash-lite",
+    "dimensions": 1536,
+    "normalization": true,
+    "output_token_limit": 512,
+    "application_embedding_retries": 0,
+    "generation_sdk_attempts": 1,
+    "concurrency": 1,
+    "warmup": 0,
+    "top_k": 5
+  },
+  "planned_answer_requests": 2,
+  "profile": "representative",
+  "corpus_sha256": "a0e1a758fc63c50342e6f61ca62d559ecc10bc98dc4426bf7e82c0c419f1bd9a",
+  "retry_caveat": "Embedding application retries disabled; underlying embedding SDK retry policy is not instrumented. SDK operation counts are not wire-attempt or billing counts.",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.6"
+  },
+  "dependencies": {
+    "langchain-google-genai": "4.3.4",
+    "google-genai": "2.19.0",
+    "sqlalchemy": "2.0.52",
+    "pgvector": "0.5.1",
+    "httpx": "0.28.1"
+  },
+  "fixtures": [
+    {
+      "filename": "cedar.pdf",
+      "title": "Cedar restaurant booking specification",
+      "text": "Section 1: Cedar restaurant booking specification.\nCedar prevents double bookings using atomic table allocation. Holds expire after 5 minutes. Staff must confirm reservations; SMS failure must not cancel a confirmed booking.\nProcedure 1: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 1 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 1: demonstrate the stated safety and validation rules with a controlled test."
+    },
+    {
+      "filename": "harbor.pdf",
+      "title": "Harbor warehouse operations handbook",
+      "text": "Section 1: Harbor warehouse operations handbook.\nHarbor raises a replenishment alert when stock falls below 20 units. Receiving staff scan barcodes and reconcile quantities with the purchase order. A supervisor approves inventory corrections before the audit ledger is updated.\nProcedure 1: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 1 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 1: demonstrate the stated safety and validation rules with a controlled test.\n\nSection 2: Harbor warehouse operations handbook.\nHarbor raises a replenishment alert when stock falls below 20 units. Receiving staff scan barcodes and reconcile quantities with the purchase order. A supervisor approves inventory corrections before the audit ledger is updated.\nProcedure 2: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 2 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 2: demonstrate the stated safety and validation rules with a controlled test.\n\nSection 3: Harbor warehouse operations handbook.\nHarbor raises a replenishment alert when stock falls below 20 units. Receiving staff scan barcodes and reconcile quantities with the purchase order. A supervisor approves inventory corrections before the audit ledger is updated.\nProcedure 3: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 3 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 3: demonstrate the stated safety and validation rules with a controlled test."
+    },
+    {
+      "filename": "quartz.pdf",
+      "title": "Quartz campus solar maintenance plan",
+      "text": "Section 1: Quartz campus solar maintenance plan.\nQuartz schedules monthly solar inverter inspections and quarterly panel cleaning. Technicians isolate electrical equipment before maintenance. Energy production is reviewed weekly against the previous month, with weather recorded.\nProcedure 1: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 1 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 1: demonstrate the stated safety and validation rules with a controlled test.\n\nSection 2: Quartz campus solar maintenance plan.\nQuartz schedules monthly solar inverter inspections and quarterly panel cleaning. Technicians isolate electrical equipment before maintenance. Energy production is reviewed weekly against the previous month, with weather recorded.\nProcedure 2: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 2 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 2: demonstrate the stated safety and validation rules with a controlled test.\n\nSection 3: Quartz campus solar maintenance plan.\nQuartz schedules monthly solar inverter inspections and quarterly panel cleaning. Technicians isolate electrical equipment before maintenance. Energy production is reviewed weekly against the previous month, with weather recorded.\nProcedure 3: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 3 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 3: demonstrate the stated safety and validation rules with a controlled test.\n\nSection 4: Quartz campus solar maintenance plan.\nQuartz schedules monthly solar inverter inspections and quarterly panel cleaning. Technicians isolate electrical equipment before maintenance. Energy production is reviewed weekly against the previous month, with weather recorded.\nProcedure 4: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 4 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 4: demonstrate the stated safety and validation rules with a controlled test.\n\nSection 5: Quartz campus solar maintenance plan.\nQuartz schedules monthly solar inverter inspections and quarterly panel cleaning. Technicians isolate electrical equipment before maintenance. Energy production is reviewed weekly against the previous month, with weather recorded.\nProcedure 5: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 5 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 5: demonstrate the stated safety and validation rules with a controlled test.\n\nSection 6: Quartz campus solar maintenance plan.\nQuartz schedules monthly solar inverter inspections and quarterly panel cleaning. Technicians isolate electrical equipment before maintenance. Energy production is reviewed weekly against the previous month, with weather recorded.\nProcedure 6: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 6 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 6: demonstrate the stated safety and validation rules with a controlled test.\n\nSection 7: Quartz campus solar maintenance plan.\nQuartz schedules monthly solar inverter inspections and quarterly panel cleaning. Technicians isolate electrical equipment before maintenance. Energy production is reviewed weekly against the previous month, with weather recorded.\nProcedure 7: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 7 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 7: demonstrate the stated safety and validation rules with a controlled test.\n\nSection 8: Quartz campus solar maintenance plan.\nQuartz schedules monthly solar inverter inspections and quarterly panel cleaning. Technicians isolate electrical equipment before maintenance. Energy production is reviewed weekly against the previous month, with weather recorded.\nProcedure 8: record the operator, timestamp, action, outcome, and reason for any exception. The responsible reviewer checks section 8 before closing the record. Keep the original record, provide a clear correction trail, and escalate unresolved exceptions. Acceptance check 8: demonstrate the stated safety and validation rules with a controlled test."
+    }
+  ],
+  "questions": [
+    "How does Cedar prevent double bookings, and what happens when a reservation hold expires or SMS fails?",
+    "Describe the Harbor replenishment threshold and inventory correction approval process.",
+    "How often does Quartz inspect inverters and clean panels?",
+    "Who approves warehouse stock corrections?",
+    "What must a technician do before maintaining solar equipment?",
+    "Does an SMS failure cancel a confirmed restaurant booking?"
+  ],
+  "uploads": [
+    {
+      "seconds": 0.05706240000290563,
+      "bytes": 1322,
+      "pages": 1,
+      "characters": 576
+    },
+    {
+      "seconds": 0.027394599994295277,
+      "bytes": 3173,
+      "pages": 3,
+      "characters": 1891
+    },
+    {
+      "seconds": 0.04297789999691304,
+      "bytes": 7587,
+      "pages": 8,
+      "characters": 5062
+    }
+  ],
+  "indexing": [
+    {
+      "seconds": 0.45093590000033146,
+      "chunks": 1,
+      "embedding_seconds": 0.4209536000053049,
+      "persistence_seconds": 0.01522339999792166,
+      "parse_extract_chunk_seconds": 0.0048793000023579225
+    },
+    {
+      "seconds": 0.5081773999991128,
+      "chunks": 3,
+      "embedding_seconds": 0.48593609999807086,
+      "persistence_seconds": 0.007812299998477101,
+      "parse_extract_chunk_seconds": 0.010654300000169314
+    },
+    {
+      "seconds": 1.1935626000049524,
+      "chunks": 8,
+      "embedding_seconds": 1.1524713000035263,
+      "persistence_seconds": 0.012848200000007637,
+      "parse_extract_chunk_seconds": 0.024512800002412405
+    }
+  ],
+  "retrieval": [
+    {
+      "seconds": 0.3207875000007334,
+      "embedding_seconds": 0.31112329999450594,
+      "vector_search_seconds": 0.0047004000007291324,
+      "retrieved_chunks": 5
+    },
+    {
+      "seconds": 0.32222279999405146,
+      "embedding_seconds": 0.3170659000024898,
+      "vector_search_seconds": 0.0027134000047226436,
+      "retrieved_chunks": 5
+    },
+    {
+      "seconds": 0.30855610000435263,
+      "embedding_seconds": 0.30367029999615625,
+      "vector_search_seconds": 0.002598700004455168,
+      "retrieved_chunks": 5
+    },
+    {
+      "seconds": 0.3074611999982153,
+      "embedding_seconds": 0.30270130000280915,
+      "vector_search_seconds": 0.002635199998621829,
+      "retrieved_chunks": 5
+    },
+    {
+      "seconds": 0.31796639999811305,
+      "embedding_seconds": 0.31278990000282647,
+      "vector_search_seconds": 0.002937799996288959,
+      "retrieved_chunks": 5
+    },
+    {
+      "seconds": 0.3295379999981378,
+      "embedding_seconds": 0.324672400005511,
+      "vector_search_seconds": 0.002578499996161554,
+      "retrieved_chunks": 5
+    }
+  ],
+  "streams": [
+    {
+      "seconds": 2.108823399998073,
+      "ok": true,
+      "chunks": 2,
+      "first_event_seconds": 0.11603399999876274,
+      "ttft_seconds": 1.9300136000019847,
+      "interrupted": false,
+      "content_sha256": "ddaa8f49ce47767a9c954c41c36592281169fda4b86536fe3c09e440f6b4a468",
+      "persistence_verified": true,
+      "citations_verified": true
+    },
+    {
+      "seconds": 1.754781900002854,
+      "ok": true,
+      "chunks": 2,
+      "first_event_seconds": 0.05060640000010608,
+      "ttft_seconds": 1.6309610000025714,
+      "interrupted": false,
+      "content_sha256": "55743731380d2ef0730fd4505ebd48a14a27409c9a4ea9951e3bbf13d2038593",
+      "persistence_verified": true,
+      "citations_verified": true
+    }
+  ],
+  "calls": {
+    "embedding_operations": {
+      "count": 11,
+      "seconds": [
+        0.4205738000018755,
+        0.4851334999984829,
+        1.1504799999966053,
+        0.31076559999928577,
+        0.3167814999978873,
+        0.3034193999992567,
+        0.30244950000633253,
+        0.3125075999996625,
+        0.32440470000437927,
+        0.3861603000041214,
+        0.3614547999968636
+      ]
+    },
+    "generation_operations": {
+      "count": 2,
+      "seconds": [
+        0.9980536000002758,
+        0.9394320999999763
+      ]
+    },
+    "token_count_operations": {
+      "count": 6,
+      "seconds": [
+        0.19943079999939073,
+        0.27589460000308463,
+        0.10593499999959022,
+        0.17762589999620104,
+        0.09751250000408618,
+        0.10441390000050887
+      ]
+    }
+  },
+  "cleanup": true,
+  "normalized_prompt_hashes": [
+    "2cf54cff90ef7db8f8346763dc8a51ae1a7a57811f33dd7a8d588aa54fad3c7d",
+    "d5276ce85ea0dba1f1a54f5a728e6661e22a7295a498e665c0ed4ccc23c88ad0"
+  ],
+  "rag_stages": [
+    {
+      "context_strategy": "semantic_retrieval",
+      "duplicates_skipped": 0,
+      "truncated_sources": 0,
+      "retrieval_seconds": 0.40178459999879124,
+      "token_count_seconds": 0.5812719000095967,
+      "token_count_operations": 3,
+      "prompt_construction_seconds": 2.1000014385208488e-06,
+      "request_preparation_seconds": 2.5300003471784294e-05,
+      "first_provider_chunk_seconds": 0.7908158999998705,
+      "first_model_content_seconds": 0.8299834999997984,
+      "model_total_seconds": 0.9980256000053487,
+      "persistence_seconds": 0.010288400000717957,
+      "local_first_content_delivery_seconds": 0.0004602000044542365
+    },
+    {
+      "context_strategy": "semantic_retrieval",
+      "duplicates_skipped": 0,
+      "truncated_sources": 0,
+      "retrieval_seconds": 0.3753620999996201,
+      "token_count_seconds": 0.37956059999851277,
+      "token_count_operations": 3,
+      "prompt_construction_seconds": 3.0000010156072676e-06,
+      "request_preparation_seconds": 2.7599999157246202e-05,
+      "first_provider_chunk_seconds": 0.8005932000014582,
+      "first_model_content_seconds": 0.8245010000027833,
+      "model_total_seconds": 0.939410200000566,
+      "persistence_seconds": 0.00790479999704985,
+      "local_first_content_delivery_seconds": 0.00024110000231303275
+    }
+  ],
+  "sdk_request_preparation_seconds": [
+    0.022327800004859455,
+    0.0003028999999514781
+  ],
+  "provider_usage": [
+    {
+      "input_tokens": 1332,
+      "output_tokens": 63,
+      "total_tokens": 1395
+    },
+    {
+      "input_tokens": 1326,
+      "output_tokens": 73,
+      "total_tokens": 1399
+    }
+  ],
+  "memory": {
+    "working_set_bytes": 221999104,
+    "peak_process_lifetime_working_set_bytes": 222269440
+  },
+  "aggregates": {
+    "retrieval_total": {
+      "samples": 6,
+      "mean_ms": 317.7553333322673,
+      "median_ms": 319.37694999942323,
+      "min_ms": 307.4611999982153,
+      "max_ms": 329.5379999981378
+    },
+    "query_embedding": {
+      "samples": 6,
+      "mean_ms": 312.00385000071645,
+      "median_ms": 311.9565999986662,
+      "min_ms": 302.70130000280915,
+      "max_ms": 324.672400005511
+    },
+    "vector_search": {
+      "samples": 6,
+      "mean_ms": 3.0273333334965478,
+      "median_ms": 2.6743000016722362,
+      "min_ms": 2.578499996161554,
+      "max_ms": 4.700400000729132
+    },
+    "document_indexing": {
+      "samples": 3,
+      "mean_ms": 717.5586333347989,
+      "median_ms": 508.1773999991128,
+      "min_ms": 450.93590000033146,
+      "max_ms": 1193.5626000049524
+    },
+    "first_content": {
+      "samples": 2,
+      "mean_ms": 1780.487300002278,
+      "median_ms": 1780.487300002278,
+      "min_ms": 1630.9610000025714,
+      "max_ms": 1930.0136000019847
+    },
+    "stream_duration": {
+      "samples": 2,
+      "mean_ms": 1931.8026500004635,
+      "median_ms": 1931.8026500004635,
+      "min_ms": 1754.781900002854,
+      "max_ms": 2108.823399998073
+    }
+  },
+  "stream_successes": 2,
+  "stream_requests": 2
+}
+```

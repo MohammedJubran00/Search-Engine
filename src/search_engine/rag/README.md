@@ -322,12 +322,24 @@ or second answer-generation request is added. Selected IDs are checked for
 ownership and for a completed usable index before any Gemini request.
 
 Document-mode JSON responses add `mode`, `status`, and validated `citations`.
-For SSE, general mode retains native token deltas. Because Phase 6 produces a
-completed answer, document mode emits exactly one full-answer `delta` carrying
-the same structured metadata, followed by `done`. This is compatibility
-buffering, not model-token streaming, and it never calls Gemini again merely
-to simulate streaming. Retrieval/provider errors are sanitized; cancellation
-is propagated rather than converted into a misleading success event.
+For SSE, general mode retains native token deltas. Document mode uses Gemini
+`astream` and incrementally decodes only the JSON `answer` string, including
+fragmented Unicode escapes. It does not split an already completed answer.
+Content deltas are provisional until the final JSON shape and source labels
+validate. Only then is the complete assistant message committed, followed by
+attribution metadata and `done`; the answer is not sent a second time.
+No partial assistant message is saved on generation/validation failure or
+cancellation before that commit. The UI clears invalid partial text, marks
+stopped text as unsaved, requires terminal completion, and retains final
+citations. A disconnect after a successful commit can still leave the valid
+answer saved even if the client misses `done`.
+
+Common complete evidence is counted once with the actual provider tokenizer;
+oversized evidence retains the bounded truncation algorithm and final budget
+check. Token counts are memoized only within a request. Model, production output
+budget, evidence and grounding instructions remain unchanged. Native stream
+requests use one SDK attempt to avoid replaying emitted content. The SDK treats
+attempts=0 as defaults rather than disabling retries.
 
 New messages use a versioned JSON envelope in the existing `messages.content`
 column. The service decodes it before returning conversation history, while

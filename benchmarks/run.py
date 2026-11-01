@@ -89,18 +89,23 @@ def request_sample(client, method, endpoint, **kwargs):
         return dict(seconds=time.perf_counter()-start, ok=False, bytes=0, timeout=isinstance(error, httpx.TimeoutException))
 
 
-def stream_sample(client, payload):
+def stream_sample(client, payload, *, verify_persistence=False):
     start = time.perf_counter()
     first_event = first_content = None
     chunks = 0
     completed = False
     done_event = False
+    answer = []
+    conversation_id = None
     try:
         with client.stream('POST', '/chat/stream', json=payload) as response:
             for line in response.iter_lines():
                 if not line.startswith('data:'):
                     continue
                 event = json.loads(line[5:])
+                conversation_id = event.get('conversation_id', conversation_id)
+                if isinstance(event.get('delta'), str):
+                    answer.append(event['delta'])
                 done_event = done_event or event.get('done') is True
                 now = time.perf_counter()-start
                 if first_event is None:
@@ -114,8 +119,18 @@ def stream_sample(client, payload):
             completed = response.is_success and chunks > 0 and done_event
     except (httpx.HTTPError, ValueError):
         pass
-    return dict(seconds=time.perf_counter()-start, ok=completed, chunks=chunks,
-                first_event_seconds=first_event, ttft_seconds=first_content, interrupted=not completed)
+    result = dict(seconds=time.perf_counter()-start, ok=completed, chunks=chunks,
+                  first_event_seconds=first_event, ttft_seconds=first_content, interrupted=not completed)
+    if verify_persistence:
+        result['client_started_perf'] = start
+        result['content_sha256'] = hashlib.sha256(''.join(answer).encode()).hexdigest()
+        if completed and conversation_id:
+            persisted = client.get(f'/api/conversations/{conversation_id}')
+            persisted.raise_for_status()
+            assistants = [item for item in persisted.json()['messages'] if item['role'] == 'assistant']
+            result['persistence_verified'] = len(assistants) == 1 and assistants[0]['content'] == ''.join(answer)
+            result['citations_verified'] = bool(assistants) and (assistants[0]['status'] != 'answered' or bool(assistants[0]['citations']))
+    return result
 
 
 async def database_bench(user_id, document_id, count):

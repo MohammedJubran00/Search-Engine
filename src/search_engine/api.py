@@ -20,6 +20,7 @@
 
 import asyncio
 import json
+import time
 import logging
 import uuid
 from contextlib import asynccontextmanager, suppress
@@ -274,6 +275,11 @@ async def answer_document_turn(
         response_depth=response_depth,
         response_language=response_language,
     )
+    await persist_document_answer(service, user_id, conversation_id, result)
+    return result
+
+
+async def persist_document_answer(service: ChatService, user_id: uuid.UUID, conversation_id: uuid.UUID, result: RagAnswerResult) -> None:
     presentation = derive_answer_presentation(result.answer).model_dump()
     await service.add_assistant_message(
         user_id=user_id,
@@ -284,7 +290,6 @@ async def answer_document_turn(
         citations=[citation_payload(source) for source in result.citations],
         presentation=presentation,
     )
-    return result
 
 
 def document_error_response(exc: Exception) -> JSONResponse:
@@ -623,16 +628,26 @@ async def chat_stream(
         async def generate_document_answer():
             try:
                 yield sse_event({"conversation_id": str(conversation_id)})
-                result = await answer_document_turn(
-                    db=db,
-                    service=service,
+                result = None
+                answer_stream = RagAnswerService(db).stream_answer(
                     user_id=user_id,
-                    conversation_id=conversation_id,
-                    query=query,
+                    question=query,
                     document_ids=effective_document_ids,
                     response_depth=request.response_depth,
                     response_language=request.response_language,
                 )
+                try:
+                    async for event in answer_stream:
+                        if isinstance(event, str):
+                            yield sse_event({'delta': event, 'provisional': True})
+                        else:
+                            result = event
+                finally:
+                    await answer_stream.aclose()
+                if result is None:
+                    raise RagGenerationError('Document stream did not complete.')
+                persistence_started = time.perf_counter()
+                await persist_document_answer(service, user_id, conversation_id, result)
                 record_rag_usage(usage, result)
                 await UsageRepository(db).add(
                     request_id=usage.request_id, user_id=user_id,
@@ -644,12 +659,11 @@ async def chat_stream(
                 )
                 citations = [citation_payload(source) for source in result.citations]
                 presentation = derive_answer_presentation(result.answer).model_dump()
-                # One honest completed-answer delta preserves old SSE clients. It is
-                # not represented as native token streaming and causes no second call.
+                await db.commit()
+                result.metadata['persistence_seconds'] = time.perf_counter()-persistence_started
+                # Final attribution only: never re-send the accumulated answer.
                 yield sse_event(
                     {
-                        "delta": result.answer,
-                        "answer": result.answer,
                         "mode": "documents",
                         "status": result.status.value,
                         "citations": citations,
@@ -665,8 +679,11 @@ async def chat_stream(
                     }
                 )
             except asyncio.CancelledError:
+                usage.mark_error()
+                await db.rollback()
                 raise
             except (RetrievalError, RagGenerationError) as exc:
+                await db.rollback()
                 usage.mark_error(quota="quota" in str(exc).lower())
                 logger.warning(
                     "Streaming document chat failed for conversation_id=%s error_type=%s",
@@ -674,7 +691,12 @@ async def chat_stream(
                     type(exc).__name__,
                 )
                 response = document_error_response(exc)
-                yield sse_event({"error": json.loads(response.body)["error"]})
+                yield sse_event({"error": json.loads(response.body)["error"], 'discard_partial': True})
+            except Exception as exc:
+                await db.rollback()
+                usage.mark_error()
+                logger.warning('Document streaming failure error_type=%s', type(exc).__name__)
+                yield sse_event({'error': 'The document answer could not be completed. Please try again.', 'discard_partial': True})
 
         return StreamingResponse(
             generate_document_answer(),

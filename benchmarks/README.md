@@ -4,8 +4,9 @@
 
 The production ASGI app is `src/search_engine/api.py`. `/chat` invokes the
 LangGraph agent; `/chat/stream` streams `stream_agent` in general/deep mode.
-Document mode uses `RagAnswerService.answer` and emits a single completed-answer
-delta. Metadata and progress are not content. A successful stream requires the
+Document mode uses `RagAnswerService.stream_answer` and native Gemini `astream`,
+decoding provisional answer chunks before final citation validation. Older
+historical reports used one completed-answer delta. Metadata and progress are not content. A successful stream requires the
 terminal `done` event as well as content.
 
 JWT auth is under `/api/auth`; conversations and documents are owner scoped.
@@ -60,8 +61,9 @@ CSV stores each named measurement as structured JSON. Markdown includes the
 readable API latency table, full evidence, skipped sections and resume guidance.
 Percentiles use linear interpolation; throughput is requests divided by batch
 wall time. Small batches are smoke measurements, not stable tail-latency or
-capacity evidence. TTFT means first nonempty assistant delta; document-mode
-TTFT is completed-answer availability, not model token emission.
+capacity evidence. TTFT means first nonempty assistant delta. Historical buffered
+document results measured completed-answer availability; native document streams
+measure the first decoded Gemini answer fragment, excluding reasoning and JSON syntax.
 
 ## Retrieval quality
 
@@ -138,8 +140,9 @@ are real too and reported separately; operation counts are not billing receipts.
 No warmup calls are made. Cold starts remain in the samples. Timers use monotonic
 `perf_counter`; instrumentation wraps real method calls without replacing their
 results. The HTTP stream is read incrementally, ignoring metadata for first-content
-timing and requiring the final done event. Document Chat exposes a completed-answer
-delta, so its first-content latency must not be described as native model TTFT.
+timing and requiring the final done event. Read each report's `streaming_mode`:
+historical buffered results measured completed-answer availability; newer native
+streams expose the first decoded answer fragment before model completion.
 Only median/range are emphasized for three samples. No robust tail-latency,
 production capacity, quality-accuracy, or improvement percentage is claimed.
 
@@ -152,3 +155,25 @@ generation failed. Its configured retries=0 did not disable SDK default retries.
 Final evidence and actual success/failure counts are in `reports/gemini-live/`.
 Do not combine attempts or select their fastest samples. Failures remain part
 of the overall reliability history and are not erased by a subsequent success.
+
+## Controlled streaming before/after
+
+`reports/document-streaming/` retains a newly measured buffered baseline and
+native-stream run on the same generated 1/3/8-page corpus. The original
+`reports/gemini-live/` remains an untouched historical reference. Reproduction:
+
+```powershell
+uv run python -m benchmarks.live_gemini --allow-paid --requests 2 --profile representative --output benchmarks/reports/document-streaming/after
+uv run python -m benchmarks.compare_streaming
+uv run python -m benchmarks.isolated_tests -q
+```
+
+The baseline uses production revision `192470c` with this measurement harness;
+the current revision uses native streaming. To reproduce a baseline, use that
+production revision in a separate checkout with the same benchmark harness and
+local configuration. The comparator checks corpus, questions, configuration,
+environment, dependencies and UUID-normalized prompt hashes before publishing
+observed reduction percentages. It never uses the mock report as a speed baseline.
+Changing the model, prompt, corpus or generation settings invalidates comparison.
+Two responses per branch are preliminary point measurements, not stable tails
+or production capacity. New live runs spend quota; comparison and tests do not.

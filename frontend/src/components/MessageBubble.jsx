@@ -116,7 +116,7 @@ export default function MessageBubble({ message }) {
           ))}
         </div>
       ) : null}
-      {!isUser && !message.isError && message.mode === 'documents' ? (
+      {!isUser && !message.isError && message.mode === 'documents' && message.status ? (
         <div className="message__grounding">
           <span className="message__mode">
             {message.status === 'insufficient_evidence'

@@ -70,3 +70,16 @@ def test_empty_retrieved_text_is_not_exposed_as_a_source() -> None:
     )
     assert result.text == ""
     assert result.sources == ()
+
+
+def test_complete_context_retains_all_text_with_one_exact_count():
+    calls = []
+    async def count(text):
+        calls.append(text)
+        return len(text.split())
+    chunks = [_chunk(1, 'Meaningful short source.'), _chunk(2, 'Another complete source with a date: 2026-11-02.')]
+    result = asyncio.run(RagContextBuilder().build(chunks, token_counter=count, available_tokens=1000))
+    assert len(calls) == 1
+    assert all(chunk.text in result.text for chunk in chunks)
+    assert result.truncated_source_count == 0
+    assert result.token_count == len(result.text.split())

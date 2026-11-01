@@ -1,14 +1,16 @@
 """Orchestrate authenticated retrieval, bounded context, and grounded generation."""
 
 import time
+import asyncio
+from contextlib import aclosing, suppress
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.search_engine.core.config import settings
-from src.search_engine.rag.answering import AnswerStatus, RagAnswerResult
+from src.search_engine.rag.answering import AnswerStatus, GenerationDraft, RagAnswerResult
 from src.search_engine.rag.contracts import RetrievedChunk
 from src.search_engine.rag.context import RagContextBuilder
 from src.search_engine.rag.generation import (
@@ -54,7 +56,7 @@ class RagAnswerCitationError(InvalidGenerationResponseError):
 
 
 class RagAnswerService:
-    """Reusable Phase 6 pipeline; it is intentionally not exposed through HTTP."""
+    """Shared grounded pipeline for complete JSON and incremental SSE responses."""
 
     def __init__(
         self,
@@ -92,10 +94,20 @@ class RagAnswerService:
         min_similarity: float | None = settings.rag_retrieval_default_min_similarity,
         response_depth: str = "auto",
         response_language: str = "auto",
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> RagAnswerResult:
+        timings = {'token_count_seconds': 0.0, 'token_count_operations': 0}
+        token_cache: dict[str, int] = {}
+        async def count_tokens(text: str) -> int:
+            if text not in token_cache:
+                started = time.perf_counter()
+                token_cache[text] = await self._generation.count_tokens(text)
+                timings['token_count_seconds'] += time.perf_counter()-started
+                timings['token_count_operations'] += 1
+            return token_cache[text]
         fixed_tokens = (
-            await self._generation.count_tokens(_SYSTEM_PROMPT)
-            + await self._generation.count_tokens(question.strip())
+            await count_tokens(_SYSTEM_PROMPT)
+            + await count_tokens(question.strip())
             + settings.rag_answer_max_output_tokens
             + settings.rag_answer_token_margin
         )
@@ -118,6 +130,7 @@ class RagAnswerService:
             document_ids=document_ids,
             min_similarity=min_similarity,
             available_tokens=available,
+            token_counter=count_tokens,
         )
         retrieval_seconds = time.perf_counter() - retrieval_started
         await self._release_retrieval_transaction()
@@ -143,7 +156,7 @@ class RagAnswerService:
         )
         context = await context_builder.build(
             chunks,
-            token_counter=self._generation.count_tokens,
+            token_counter=count_tokens,
             available_tokens=context_budget,
         )
         if not context.sources:
@@ -156,6 +169,7 @@ class RagAnswerService:
                 },
             )
 
+        prompt_started = time.perf_counter()
         user_prompt = (
             "Question:\n"
             f"{question.strip()}\n\n"
@@ -167,11 +181,26 @@ class RagAnswerService:
             "Follow explicit user requests for detail, summaries, examples, code, and format. "
             "These style instructions never permit unsupported factual claims."
         )
+        timings['prompt_construction_seconds'] = time.perf_counter()-prompt_started
         started = time.perf_counter()
-        draft = await self._generation.generate(
-            system_prompt=_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-        )
+        if on_delta is None:
+            draft = await self._generation.generate(system_prompt=_SYSTEM_PROMPT, user_prompt=user_prompt)
+        else:
+            draft = None
+            streamed_parts = []
+            async with aclosing(self._generation.stream_generate(system_prompt=_SYSTEM_PROMPT, user_prompt=user_prompt)) as stream:
+                async for event in stream:
+                    if draft is not None:
+                        raise InvalidGenerationResponseError('Provider emitted content after its final result.')
+                    if isinstance(event, str):
+                        streamed_parts.append(event)
+                        await on_delta(event)
+                    else:
+                        draft = event
+            if not isinstance(draft, GenerationDraft):
+                raise InvalidGenerationResponseError('Provider stream did not finish validation.')
+            if ''.join(streamed_parts) != draft.answer:
+                raise InvalidGenerationResponseError('Stream content did not match the validated answer.')
         elapsed = time.perf_counter() - started
 
         by_label = {source.label: source for source in context.sources}
@@ -197,8 +226,41 @@ class RagAnswerService:
                 "duplicates_skipped": context.duplicate_chunks_skipped,
                 "truncated_sources": context.truncated_source_count,
                 "retrieval_seconds": retrieval_seconds,
+                **timings,
+                **getattr(self._generation, 'timings', {}),
             },
         )
+
+    async def stream_answer(self, **kwargs) -> AsyncIterator[str | RagAnswerResult]:
+        """Bounded handoff; disconnect cancels the active provider operation."""
+        queue = asyncio.Queue(maxsize=1)
+        emitted = False
+        async def publish(delta):
+            nonlocal emitted
+            emitted = True
+            await queue.put(delta)
+        async def produce():
+            try:
+                result = await self.answer(on_delta=publish, **kwargs)
+                # Locally produced abstentions have no provider stream to forward.
+                if not emitted and result.generation_seconds is None:
+                    await publish(result.answer)
+                await queue.put(result)
+            except Exception as error:
+                await queue.put(error)
+        producer = asyncio.create_task(produce())
+        try:
+            while True:
+                event = await queue.get()
+                if isinstance(event, Exception):
+                    raise event
+                yield event
+                if isinstance(event, RagAnswerResult):
+                    break
+        finally:
+            producer.cancel()
+            with suppress(asyncio.CancelledError):
+                await producer
 
     async def _select_evidence(
         self,
@@ -209,6 +271,7 @@ class RagAnswerService:
         document_ids: Sequence[uuid.UUID] | None,
         min_similarity: float | None,
         available_tokens: int,
+        token_counter: Callable[[str], Awaitable[int]] | None = None,
     ) -> tuple[list[RetrievedChunk], str]:
         if (
             settings.rag_full_context_enabled
@@ -224,7 +287,7 @@ class RagAnswerService:
             if candidates:
                 raw_text = "\n\n".join(chunk.text.strip() for chunk in candidates)
                 full_budget = min(available_tokens, settings.rag_full_context_max_tokens)
-                if raw_text and await self._generation.count_tokens(raw_text) <= full_budget:
+                if raw_text and await (token_counter or self._generation.count_tokens)(raw_text) <= full_budget:
                     return candidates, "full_document"
 
         chunks = await self._retrieval.retrieve(

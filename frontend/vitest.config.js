@@ -2,6 +2,6 @@ import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
-    include: ['src/components/**/*.test.jsx'],
+    include: ['src/components/**/*.test.jsx', 'src/api/**/*.test.jsx'],
   },
 })

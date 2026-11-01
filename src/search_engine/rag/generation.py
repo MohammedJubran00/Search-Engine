@@ -2,7 +2,9 @@
 
 import asyncio
 import json
-from collections.abc import Mapping
+import time
+from dataclasses import replace
+from collections.abc import AsyncIterator, Mapping
 from typing import Any, Protocol
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -10,6 +12,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.search_engine.core.config import settings
 from src.search_engine.rag.answering import AnswerStatus, GenerationDraft
+from src.search_engine.rag.streaming_json import AnswerJsonDecoder
 
 _RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -45,6 +48,8 @@ class GenerationProvider(Protocol):
 
     async def generate(self, *, system_prompt: str, user_prompt: str) -> GenerationDraft: ...
 
+    def stream_generate(self, *, system_prompt: str, user_prompt: str) -> AsyncIterator[str | GenerationDraft]: ...
+
 
 class GeminiRagGenerationProvider:
     """Call one controlled Gemini model and validate its JSON response."""
@@ -58,12 +63,13 @@ class GeminiRagGenerationProvider:
         if timeout_seconds <= 0:
             raise ValueError("Generation timeout must be positive.")
         self._timeout_seconds = timeout_seconds
+        self.timings: dict[str, float] = {}
         self._client = client or ChatGoogleGenerativeAI(
             model=settings.rag_answer_model,
             api_key=settings.gemini_api_key,
             temperature=settings.rag_answer_temperature,
             max_tokens=settings.rag_answer_max_output_tokens,
-            retries=settings.rag_answer_max_retries,
+            retries=max(1, settings.rag_answer_max_retries),
             request_timeout=timeout_seconds,
             response_mime_type="application/json",
             response_schema=_RESPONSE_SCHEMA,
@@ -97,6 +103,44 @@ class GeminiRagGenerationProvider:
         except Exception as exc:
             raise RagGenerationError("Gemini answer generation failed.") from exc
         return _parse_response(response)
+
+    async def stream_generate(self, *, system_prompt: str, user_prompt: str) -> AsyncIterator[str | GenerationDraft]:
+        """Yield decoded provider answer fragments, then one validated draft.
+
+        Partial content is provisional. No retry/restart is attempted after
+        emission: that would duplicate text. Callers persist only the final draft.
+        """
+        decoder = AnswerJsonDecoder()
+        aggregate = None
+        started = time.perf_counter()
+        messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+        self.timings = {'request_preparation_seconds': time.perf_counter()-started,
+                        'generation_started_perf': started}
+        iterator = self._client.astream(messages, max_retries=1)
+        try:
+            async with asyncio.timeout(self._timeout_seconds):
+                async for chunk in iterator:
+                    self.timings.setdefault('first_provider_chunk_seconds', time.perf_counter()-started)
+                    aggregate = chunk if aggregate is None else aggregate + chunk
+                    delta = decoder.feed(_message_text(chunk.content))
+                    if delta:
+                        self.timings.setdefault('first_model_content_seconds', time.perf_counter()-started)
+                        yield delta
+            if aggregate is None:
+                raise InvalidGenerationResponseError('Gemini returned an empty stream.')
+            draft = _parse_response(aggregate)
+            if decoder.answer.strip() != draft.answer:
+                raise InvalidGenerationResponseError('Streamed answer did not match final JSON.')
+            self.timings['model_total_seconds'] = time.perf_counter()-started
+            yield replace(draft, answer=decoder.answer)
+        except TimeoutError as exc:
+            raise RagGenerationTimeoutError('Gemini answer streaming timed out.') from exc
+        except RagGenerationError:
+            raise
+        except Exception as exc:
+            raise RagGenerationError('Gemini answer streaming failed.') from exc
+        finally:
+            await iterator.aclose()
 
 
 def _parse_response(response: AIMessage) -> GenerationDraft:
@@ -138,7 +182,7 @@ def _message_text(content: str | list[str | dict[str, Any]]) -> str:
     for item in content:
         if isinstance(item, str):
             parts.append(item)
-        elif isinstance(item, dict) and isinstance(item.get("text"), str):
+        elif isinstance(item, dict) and item.get('type') not in {'thinking', 'reasoning'} and not item.get('thought') and isinstance(item.get("text"), str):
             parts.append(item["text"])
     return "".join(parts)
 

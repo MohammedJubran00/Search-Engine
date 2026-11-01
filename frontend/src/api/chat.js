@@ -77,7 +77,8 @@ export async function streamChatQuery(query, onDelta, options = {}) {
       ),
       signal,
     })
-  } catch {
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error
     throw new Error(UNREACHABLE)
   }
 
@@ -105,43 +106,55 @@ export async function streamChatQuery(query, onDelta, options = {}) {
   const decoder = new TextDecoder()
   let buffer = ''
   let answer = ''
+  let completed = false
   let resolvedConversationId = conversationId || null
 
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
+  try {
+    while (!completed) {
+      const { value, done } = await reader.read()
+      if (done) break
 
-    buffer += decoder.decode(value, { stream: true })
-    const blocks = buffer.split('\n\n')
-    buffer = blocks.pop() ?? ''
+      buffer += decoder.decode(value, { stream: true })
+      const blocks = buffer.split(/\r?\n\r?\n/)
+      buffer = blocks.pop() ?? ''
 
-    for (const block of blocks) {
-      let payload
-      try {
-        payload = parseSseBlock(block)
-      } catch {
-        continue
+      for (const block of blocks) {
+        if (completed) break
+        let payload
+        try {
+          payload = parseSseBlock(block)
+        } catch {
+          throw new Error('The server returned invalid stream data. Please try again.')
+        }
+
+        if (!payload) continue
+        if (payload.done === true) completed = true
+
+        if (typeof payload.conversation_id === 'string' && payload.conversation_id) {
+          resolvedConversationId = payload.conversation_id
+          onConversationId?.(payload.conversation_id)
+        }
+
+        if (typeof payload.error === 'string' && payload.error.trim()) {
+          throw new Error(payload.error.trim())
+        }
+
+        if (typeof payload.delta === 'string' && payload.delta) {
+          answer += payload.delta
+          onDelta(answer)
+        }
+
+        const metadata = readDocumentStreamMetadata(payload, mode || 'general')
+        if (metadata && !payload.done) onMetadata?.(metadata)
       }
-
-      if (!payload) continue
-
-      if (typeof payload.conversation_id === 'string' && payload.conversation_id) {
-        resolvedConversationId = payload.conversation_id
-        onConversationId?.(payload.conversation_id)
-      }
-
-      if (typeof payload.error === 'string' && payload.error.trim()) {
-        throw new Error(payload.error.trim())
-      }
-
-      if (typeof payload.delta === 'string' && payload.delta) {
-        answer += payload.delta
-        onDelta(answer)
-      }
-
-      const metadata = readDocumentStreamMetadata(payload, mode || 'general')
-      if (metadata) onMetadata?.(metadata)
     }
+  } finally {
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
+
+  if (!completed) {
+    throw new Error('The answer stream was interrupted before completion. Please try again.')
   }
 
   if (!answer.trim()) {

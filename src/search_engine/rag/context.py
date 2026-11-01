@@ -61,6 +61,23 @@ class RagContextBuilder:
         remaining = available_tokens
         truncated_count = 0
 
+        # Common case: retain every complete source with one exact provider count.
+        # Oversized evidence still uses the bounded, fair truncation path below.
+        complete = '\n\n'.join(
+            f'{_source_header(f"S{index}", chunk)}{chunk.text.strip()}\n</source>'
+            for index, chunk in enumerate(unique, 1)
+        )
+        complete_tokens = await token_counter(complete) if complete else 0
+        if complete_tokens <= available_tokens:
+            return BuiltContext(
+                text=complete,
+                sources=tuple(_source_reference(f'S{index}', chunk, chunk.text.strip(), self._excerpt_characters)
+                              for index, chunk in enumerate(unique, 1)),
+                token_count=complete_tokens,
+                available_tokens=available_tokens,
+                duplicate_chunks_skipped=duplicate_count,
+            )
+
         for index, chunk in enumerate(unique):
             label = f"S{index + 1}"
             candidates_left = len(unique) - index
@@ -92,16 +109,7 @@ class RagContextBuilder:
             blocks.append(block)
             remaining -= block_tokens
             sources.append(
-                SourceReference(
-                    label=label,
-                    document_id=chunk.document_id,
-                    chunk_id=chunk.chunk_id,
-                    filename=chunk.filename,
-                    page_number=chunk.page_number,
-                    rank=chunk.rank,
-                    cosine_similarity=chunk.cosine_similarity,
-                    evidence_excerpt=_excerpt(included, self._excerpt_characters),
-                )
+                _source_reference(label, chunk, included, self._excerpt_characters)
             )
 
         context = "\n\n".join(blocks)
@@ -116,6 +124,13 @@ class RagContextBuilder:
             duplicate_chunks_skipped=duplicate_count,
             truncated_source_count=truncated_count,
         )
+
+
+def _source_reference(label: str, chunk: RetrievedChunk, included: str, maximum: int) -> SourceReference:
+    return SourceReference(label=label, document_id=chunk.document_id, chunk_id=chunk.chunk_id,
+                           filename=chunk.filename, page_number=chunk.page_number, rank=chunk.rank,
+                           cosine_similarity=chunk.cosine_similarity,
+                           evidence_excerpt=_excerpt(included, maximum))
 
 
 def _source_header(label: str, chunk: RetrievedChunk) -> str:

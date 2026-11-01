@@ -42,7 +42,7 @@ def main():
             time.sleep(1)
     result = dict(mode='live provider integration; confirm server provider configuration separately', chat_mode=args.mode,
                   summary=summary(samples, sum(item['seconds'] for item in samples)), samples=samples,
-                  caveat='Document chat emits one completed-answer chunk, not native model token streaming.')
+                  caveat='First content is the first nonblank assistant delta; confirm whether the target server is buffered or native. Metadata and browser-paint time are excluded.')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2), encoding='utf-8')
 

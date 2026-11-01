@@ -221,6 +221,7 @@ export default function App() {
           isLoading={isLoading}
           onExampleSelect={handleSubmit}
           mode={chatMode}
+          researchMode={researchMode}
         />
         <SearchInput
           onSubmit={handleSubmit}

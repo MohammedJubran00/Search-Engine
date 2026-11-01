@@ -14,7 +14,7 @@ const DOCUMENT_EXAMPLE_QUERIES = [
   'Which recommendations are supported by the documents?',
 ]
 
-export default function ChatWindow({ messages, isLoading, onExampleSelect, mode }) {
+export default function ChatWindow({ messages, isLoading, onExampleSelect, mode, researchMode }) {
   const endRef = useRef(null)
   const isEmpty = messages.length === 0 && !isLoading
   const lastMessage = messages[messages.length - 1]
@@ -22,6 +22,11 @@ export default function ChatWindow({ messages, isLoading, onExampleSelect, mode 
     isLoading &&
     (!lastMessage || lastMessage.role !== 'assistant' || !lastMessage.content)
   const examples = mode === 'documents' ? DOCUMENT_EXAMPLE_QUERIES : EXAMPLE_QUERIES
+  const progressMessage = mode === 'documents'
+    ? 'Retrieving document evidence and checking citations…'
+    : researchMode === 'deep'
+      ? 'Planning bounded research and checking web sources…'
+      : 'Researching and drafting an answer…'
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -58,7 +63,7 @@ export default function ChatWindow({ messages, isLoading, onExampleSelect, mode 
           {messages.map((message) => (
             <MessageBubble key={message.id} message={message} />
           ))}
-          {waitingForFirstToken ? <LoadingIndicator /> : null}
+          {waitingForFirstToken ? <LoadingIndicator message={progressMessage} /> : null}
           <div ref={endRef} />
         </div>
       )}

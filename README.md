@@ -85,8 +85,10 @@ and Tavily keys for real provider calls. Automated tests make no paid calls.
    uv run uvicorn src.search_engine.api:app --reload
    ```
 
-5. In another terminal, start the durable indexing worker. Uploads are queued;
-   this process performs the quota-bearing Gemini embedding work:
+5. The API starts the durable indexing consumer automatically, so a successful
+   upload begins indexing without another command. For a multi-process
+   deployment, set `INDEXING_WORKER_EMBEDDED_ENABLED=false` on API instances
+   and run a dedicated supervised consumer instead:
 
    ```powershell
    uv run python -m src.search_engine.indexing_worker
@@ -112,7 +114,7 @@ Open `http://127.0.0.1:5173/`. Vite proxies `/api` and `/chat` to port 8000.
 | Database | `DB_*` | SQLAlchemy and Alembic connection |
 | Auth/browser | `JWT_*`, token expirations, `CORS_ALLOWED_ORIGINS` | HS256 tokens and origins |
 | Upload/parser | `RAG_STORAGE_DIR`, upload/DOCX/PDF limits | Storage and resource safety |
-| Indexing | `RAG_EMBEDDING_*`, `RAG_INDEXING_MAX_CHUNKS` | Model, 1536d vectors, retries |
+| Indexing | `RAG_EMBEDDING_*`, `RAG_INDEXING_MAX_CHUNKS`, `INDEXING_WORKER_*` | Model, 1536d vectors, automatic consumer, retries |
 | RAG | `RAG_RETRIEVAL_*`, `RAG_ANSWER_*`, `RAG_FULL_CONTEXT_*` | Evidence/model budgets |
 | Research | `GENERAL_CHAT_*`, `RESEARCH_*` | History, planning, search, timeout |
 | Usage | `USAGE_*` | Process-local safety ceilings; usage events are persistent |
@@ -133,7 +135,7 @@ revoke issued stateless JWTs. See `docs/security-review.md`.
 
 1. Upload one or more PDF, DOCX, or TXT documents. Each valid upload is parsed,
    stored, and atomically enqueued without blocking the HTTP response.
-2. The separate worker claims jobs with PostgreSQL row locking, reports real
+2. The automatically started consumer claims jobs with PostgreSQL row locking, reports real
    stages/chunk counts, and prevents duplicate active jobs. Failed jobs expose
    a safe Retry action.
 3. Indexing removes verified repeated PDF margin boilerplate, chunks text,
@@ -241,7 +243,9 @@ English and Arabic cases without committing private content or inventing scores.
 - The usage dashboard polls every three seconds rather than using a dedicated
   metrics SSE channel. General Gemini token totals are marked estimated when
   the agent SDK does not expose final provider usage; RAG uses provider metadata.
-- The indexing worker is a separate process and must be supervised in production.
+- The embedded worker is convenient for one API process. Multi-process
+  production deployments should disable it on API replicas and supervise one
+  or more dedicated consumers; PostgreSQL locking safely coordinates them.
 - Document listing is paginated but not virtualized; UI result sets are bounded
   to the current page.
 - No hybrid retrieval, reranker, HNSW, answer cache, or silent re-indexing of

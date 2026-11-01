@@ -1,9 +1,27 @@
 """Persistent platform state, ownership, preferences, and browser integration."""
 
+import asyncio
+import threading
+
 from fastapi.testclient import TestClient
 
 from src.search_engine.core.config import settings
 from tests.auth_helpers import auth_headers
+
+
+def test_api_lifespan_starts_automatic_indexing_consumer(monkeypatch) -> None:
+    import src.search_engine.api as api_module
+
+    started = threading.Event()
+
+    async def fake_worker() -> None:
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(api_module.settings, "indexing_worker_embedded_enabled", True)
+    monkeypatch.setattr(api_module, "run_indexing_worker", fake_worker)
+    with TestClient(api_module.app):
+        assert started.wait(timeout=1)
 
 
 def test_conversation_crud_search_and_user_isolation(client: TestClient) -> None:

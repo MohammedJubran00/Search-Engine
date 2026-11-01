@@ -13,7 +13,8 @@ Planned flow:
 3. Parse text with PyMuPDF, python-docx, or the standard library.
 4. Split text with `langchain-text-splitters` using the configured character
    size and overlap.
-5. Queue a durable indexing job and generate vectors in the separate worker.
+5. Queue a durable indexing job and generate vectors in the API-started worker
+   (or a dedicated consumer when embedded execution is disabled).
 6. Store document/chunk metadata and vectors in PostgreSQL with pgvector.
 7. Require `user_id` in every document and similarity query; optional document
    filters are applied in addition to that ownership predicate.

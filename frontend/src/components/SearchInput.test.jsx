@@ -60,4 +60,13 @@ describe('SearchInput', () => {
     fireEvent.keyDown(composer, { key: 'Enter', code: 'Enter', shiftKey: false })
     expect(onSubmit).toHaveBeenCalledWith('send me')
   })
+
+  it('shows a clear remove action for attached documents', () => {
+    render(<SearchInput {...baseProps} onSubmit={vi.fn()} documents={[{
+      id:'doc-1', original_filename:'Long project document.pdf', file_size:1200,
+      indexing_status:'queued',
+    }]} attachedDocumentIds={['doc-1']} />)
+    expect(screen.getByRole('button', { name:'Remove Long project document.pdf' })).not.toBeNull()
+    expect(screen.getByText(/Queued for indexing/)).not.toBeNull()
+  })
 })

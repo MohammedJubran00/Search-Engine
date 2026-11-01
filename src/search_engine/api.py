@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 import uuid
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -37,6 +38,7 @@ from src.search_engine.database.database import get_db
 from src.search_engine.deps import get_current_user, get_usage_request
 from src.search_engine.document_router import router as document_router
 from src.search_engine.metrics_router import router as metrics_router
+from src.search_engine.indexing_worker import run as run_indexing_worker
 from src.search_engine.preferences_router import router as preferences_router
 from src.search_engine.main import app as graph_app  # عشان ما نخلطه مع: app = FastAPI() ( لا نستخدم نفس الاسم)
 from src.search_engine.main import AgentStreamMetadata, stream_agent
@@ -61,7 +63,26 @@ from src.search_engine.services.retrieval_service import (
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Run the durable queue consumer automatically with this API process."""
+    worker = None
+    if settings.indexing_worker_embedded_enabled:
+        worker = asyncio.create_task(
+            run_indexing_worker(), name="document-indexing-worker"
+        )
+        logger.info("Embedded document indexing worker started")
+    try:
+        yield
+    finally:
+        if worker is not None:
+            worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

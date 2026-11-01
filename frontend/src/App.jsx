@@ -139,6 +139,13 @@ export default function App() {
     } finally { loadingRef.current = false; setIsLoading(false); abortRef.current = null }
   }, [chatMode, documents, loadConversations, preferences, researchMode, selectedDocumentIds])
 
+  const documentsChanged = useCallback((items) => {
+    setDocuments((current) => [
+      ...items,
+      ...current.filter((old) => !items.some((item) => item.id === old.id)),
+    ])
+  }, [])
+
   async function selectionChanged(ids) {
     setSelectedDocumentIds(ids)
     if (conversationRef.current) await updateConversationDocuments(conversationRef.current, ids)
@@ -160,7 +167,7 @@ export default function App() {
     <div className="app-shell">
       <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((value) => !value)} view={view} onView={selectView} conversations={conversations} activeId={conversationId} onSelectConversation={openConversation} onNewChat={newChat} onRename={handleRename} onDelete={handleDelete} search={conversationSearch} onSearch={setConversationSearch} />
       <main className="workspace">
-        {view === 'documents' ? <DocumentLibrary onDocumentsChanged={(items) => setDocuments((current) => [...items, ...current.filter((old) => !items.some((item) => item.id === old.id))])} /> : null}
+        {view === 'documents' ? <DocumentLibrary onDocumentsChanged={documentsChanged} /> : null}
         {view === 'usage' ? <UsageDashboard /> : null}
         {view === 'settings' ? <SettingsPage onPreferences={applyPreferences} /> : null}
         {view === 'chat' ? <div className="chat-workspace"><header className="workspace__top"><div><span>{researchMode === 'deep' ? 'Deep Research' : chatMode === 'documents' ? 'Document Chat' : 'General Chat'}</span><small>{conversationId ? 'Persistent conversation' : 'Start a new conversation'}</small></div>{isLoading ? <button type="button" onClick={() => abortRef.current?.abort()}>Stop generating</button> : null}</header><ChatModeSelector mode={chatMode} researchMode={researchMode} selectedCount={selectedDocumentIds.length} onSelect={(mode, nextResearchMode) => void selectChatMode(mode, nextResearchMode)} disabled={isLoading} /><ChatWindow messages={messages} isLoading={isLoading} onExampleSelect={submit} mode={chatMode} researchMode={researchMode} /><SearchInput onSubmit={submit} onStop={() => abortRef.current?.abort()} disabled={isLoading} documents={documents} attachedDocumentIds={selectedDocumentIds} onAttachDocument={(id) => { void selectChatMode('documents', 'standard'); void selectionChanged([...new Set([...selectedDocumentIds, id])]) }} onRemoveDocument={(id) => void selectionChanged(selectedDocumentIds.filter((value) => value !== id))} onDocumentUpsert={(document) => setDocuments((current) => [document, ...current.filter((item) => item.id !== document.id)])} /></div> : null}

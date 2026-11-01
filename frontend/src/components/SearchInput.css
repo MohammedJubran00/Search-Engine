@@ -60,6 +60,13 @@
   font-size: 0.68rem;
 }
 
+.attachment-card .attachment-card__remove {
+  flex: none;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+}
+
 .search-input__status {
   margin: 0 6px 7px;
   color: var(--text-muted);

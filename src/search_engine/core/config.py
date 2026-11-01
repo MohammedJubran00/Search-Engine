@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     rag_embedding_max_retries: int = 3
     rag_embedding_retry_base_seconds: float = 1.0
     rag_indexing_max_chunks: int = 5_000
+    indexing_worker_embedded_enabled: bool = True
+    indexing_worker_poll_seconds: float = 0.5
     rag_retrieval_top_k: int = 5
     rag_retrieval_max_top_k: int = 50
     rag_retrieval_max_query_characters: int = 2_000

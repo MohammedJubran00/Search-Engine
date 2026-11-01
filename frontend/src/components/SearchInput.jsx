@@ -123,7 +123,7 @@ export default function SearchInput({
                 <strong>{document.original_filename}</strong>
                 <small>{formatDocumentBytes(document.file_size)} · {document.indexing_status === 'completed' ? 'Indexed and ready' : document.indexing_status === 'processing' ? 'Indexing…' : document.indexing_status === 'queued' ? 'Queued for indexing' : document.indexing_status === 'failed' ? 'Indexing failed' : 'Uploaded, not indexed'}</small>
               </span>
-              <button type="button" aria-label={`Detach ${document.original_filename}`} onClick={() => onRemoveDocument(document.id)}>×</button>
+              <button type="button" className="attachment-card__remove" aria-label={`Remove ${document.original_filename}`} title="Remove attachment" onClick={() => onRemoveDocument(document.id)}>Remove</button>
             </article>
           ))}
         </div>

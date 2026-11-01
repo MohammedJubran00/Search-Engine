@@ -3,6 +3,7 @@
 import asyncio
 import logging
 
+from src.search_engine.core.config import settings
 from src.search_engine.database.database import SessionLocal
 from src.search_engine.repositories.indexing_job_repository import IndexingJobRepository
 from src.search_engine.services.document_indexing_service import DocumentIndexingService
@@ -66,9 +67,17 @@ async def process_one() -> bool:
 
 async def run() -> None:
     while True:
-        worked = await process_one()
-        if not worked:
-            await asyncio.sleep(1.0)
+        try:
+            worked = await process_one()
+            if not worked:
+                await asyncio.sleep(settings.indexing_worker_poll_seconds)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # The PostgreSQL queue is durable. A transient database failure must
+            # not permanently kill the consumer and strand future uploads.
+            logger.exception("Indexing worker loop failed; retrying")
+            await asyncio.sleep(settings.indexing_worker_poll_seconds)
 
 
 if __name__ == "__main__":

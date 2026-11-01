@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +27,10 @@ class Conversation(Base):
     """One chat thread owned by exactly one user."""
 
     __tablename__ = "conversations"
+    __table_args__ = (
+        CheckConstraint("mode IN ('general', 'documents', 'deep')", name="ck_conversations_mode"),
+        Index("ix_conversations_user_updated", "user_id", "updated_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -40,6 +44,9 @@ class Conversation(Base):
         index=True,
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    mode: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="general", server_default="general"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -44,6 +44,23 @@ export async function fetchDocuments() {
   return Array.isArray(payload) ? payload : []
 }
 
+export async function fetchDocumentPage({ search = '', status = '', offset = 0 } = {}) {
+  const params = new URLSearchParams({ limit: '24', offset: String(offset) })
+  if (search.trim()) params.set('search', search.trim())
+  if (status) params.set('indexing_status', status)
+  const response = await authorizedFetch(`/api/documents/page?${params}`)
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(readErrorDetail(payload, 'Could not load documents.'))
+  return payload
+}
+
+export async function fetchIndexingJob(documentId) {
+  const response = await authorizedFetch(`/api/documents/${documentId}/index-job`)
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) throw new Error(readErrorDetail(payload, 'Could not load indexing status.'))
+  return payload
+}
+
 export function fetchDocument(documentId) {
   return documentRequest(`${DOCUMENTS_URL}/${documentId}`, undefined, 'load')
 }

@@ -7,7 +7,7 @@ filesystem services. Every id lookup includes the authenticated ``user_id``.
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,6 +15,7 @@ from src.search_engine.models.document import (
     DOCUMENT_PROCESSING_STATUSES,
     Document,
 )
+from src.search_engine.models.document_index_state import DocumentIndexState
 
 
 class DocumentRepository:
@@ -53,6 +54,24 @@ class DocumentRepository:
             .order_by(Document.created_at.desc())
         )
         return list(result.scalars().all())
+
+    async def page_for_user(
+        self, user_id: uuid.UUID, *, search: str | None,
+        status: str | None, limit: int, offset: int,
+    ) -> tuple[list[Document], int]:
+        predicate = [Document.user_id == user_id]
+        if search:
+            predicate.append(Document.original_filename.ilike(f"%{search}%"))
+        statement = select(Document).options(selectinload(Document.index_state)).where(*predicate)
+        count_statement = select(func.count()).select_from(Document).where(*predicate)
+        if status:
+            statement = statement.join(DocumentIndexState).where(DocumentIndexState.status == status)
+            count_statement = count_statement.join(DocumentIndexState).where(DocumentIndexState.status == status)
+        result = await self._session.execute(
+            statement.order_by(Document.created_at.desc()).limit(limit).offset(offset)
+        )
+        total = await self._session.scalar(count_statement)
+        return list(result.scalars().all()), int(total or 0)
 
     async def get_by_id_for_user(
         self,

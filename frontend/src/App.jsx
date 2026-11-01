@@ -1,239 +1,169 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchLatestConversation, streamChatQuery } from './api/chat'
-import ChatWindow from './components/ChatWindow'
+import { streamChatQuery } from './api/chat'
+import {
+  createConversation, deleteConversation, fetchConversation,
+  fetchConversations, renameConversation, updateConversation, updateConversationDocuments,
+} from './api/conversations'
+import { fetchDocuments } from './api/documents'
+import { fetchPreferences } from './api/preferences'
 import ChatModeSelector from './components/ChatModeSelector'
-import DocumentPanel from './components/DocumentPanel'
-import Header from './components/Header'
+import ChatWindow from './components/ChatWindow'
+import DocumentLibrary from './components/DocumentLibrary'
 import SearchInput from './components/SearchInput'
+import SettingsPage from './components/SettingsPage'
+import Sidebar from './components/Sidebar'
 import UsageDashboard from './components/UsageDashboard'
 import './App.css'
 
 let messageSeq = 0
-
-function nextMessageId() {
-  messageSeq += 1
-  return `msg-${messageSeq}`
-}
-
-function createMessage(partial) {
-  return {
-    id: nextMessageId(),
-    ...partial,
-  }
-}
-
-function messagesFromServer(records) {
-  return records
-    .filter(
-      (item) =>
-        item &&
-        (item.role === 'user' || item.role === 'assistant') &&
-        typeof item.content === 'string',
-    )
-    .map((item) => ({
-      id: String(item.id),
-      role: item.role,
-      content: item.content,
-      mode: item.mode || 'general',
-      status: item.status || null,
-      citations: Array.isArray(item.citations) ? item.citations : [],
-      webCitations: Array.isArray(item.web_citations) ? item.web_citations : [],
-      researchPlan: Array.isArray(item.research_plan) ? item.research_plan : [],
-      researchSummary: item.research_summary || null,
-      evidenceConflicts: Array.isArray(item.evidence_conflicts) ? item.evidence_conflicts : [],
-      presentation: item.presentation || { type: 'standard' },
-      attachments: Array.isArray(item.attachments) ? item.attachments : [],
-    }))
-}
+const ACTIVE_CONVERSATION_KEY = 'research-assistant.active-conversation'
+const createMessage = (partial) => ({ id: `local-${++messageSeq}`, ...partial })
+const fromServer = (records) => records.map((item) => ({
+  id: String(item.id), role: item.role, content: item.content,
+  mode: item.mode || 'general', status: item.status || null,
+  citations: item.citations || [], webCitations: item.web_citations || [],
+  researchPlan: item.research_plan || [], researchSummary: item.research_summary || null,
+  evidenceConflicts: item.evidence_conflicts || [], presentation: item.presentation || { type: 'standard' },
+  attachments: item.attachments || [],
+}))
 
 export default function App() {
-  const [messages, setMessages] = useState([])
+  const [view, setView] = useState('chat')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [conversations, setConversations] = useState([])
+  const [conversationSearch, setConversationSearch] = useState('')
   const [conversationId, setConversationId] = useState(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [chatMode, setChatMode] = useState('general')
-  const [researchMode, setResearchMode] = useState('standard')
+  const [messages, setMessages] = useState([])
   const [documents, setDocuments] = useState([])
   const [selectedDocumentIds, setSelectedDocumentIds] = useState([])
-  const [metricsOpen, setMetricsOpen] = useState(false)
-  const isLoadingRef = useRef(false)
-  const conversationIdRef = useRef(null)
+  const [chatMode, setChatMode] = useState('general')
+  const [researchMode, setResearchMode] = useState('standard')
+  const [preferences, setPreferences] = useState({ response_language: 'auto', response_depth: 'auto', default_mode: 'general', theme: 'dark' })
+  const [isLoading, setIsLoading] = useState(false)
+  const loadingRef = useRef(false)
+  const conversationRef = useRef(null)
+  const abortRef = useRef(null)
+  const restoredConversationRef = useRef(false)
 
-  useEffect(() => {
-    conversationIdRef.current = conversationId
-  }, [conversationId])
-
-  useEffect(() => {
-    let cancelled = false
-
-    fetchLatestConversation()
-      .then((latest) => {
-        if (cancelled) return
-        if (latest.conversationId) {
-          conversationIdRef.current = latest.conversationId
-          setConversationId(latest.conversationId)
-        }
-        if (latest.messages.length) {
-          setMessages(messagesFromServer(latest.messages))
-        }
-      })
-      .catch(() => {
-        // 401 already redirects. Other errors leave an empty chat.
-      })
-
-    return () => {
-      cancelled = true
+  const loadConversations = useCallback(async () => {
+    const result = await fetchConversations(conversationSearch)
+    setConversations(result.items)
+    if (!restoredConversationRef.current && !conversationRef.current && result.items.length) {
+      restoredConversationRef.current = true
+      const savedId = window.localStorage.getItem(ACTIVE_CONVERSATION_KEY)
+      const target = result.items.find((item) => item.id === savedId) || result.items[0]
+      const detail = await fetchConversation(target.id)
+      conversationRef.current = target.id
+      setConversationId(target.id)
+      setMessages(fromServer(detail.messages))
+      setSelectedDocumentIds(detail.document_ids || [])
+      setChatMode(detail.mode === 'documents' ? 'documents' : 'general')
+      setResearchMode(detail.mode === 'deep' ? 'deep' : 'standard')
     }
-  }, [])
+  }, [conversationSearch])
 
-  const handleSubmit = useCallback(async (query) => {
+  useEffect(() => { const timer = window.setTimeout(() => { void loadConversations() }, 180); return () => window.clearTimeout(timer) }, [loadConversations])
+  useEffect(() => { fetchDocuments().then(setDocuments).catch(() => {}); fetchPreferences().then(applyPreferences).catch(() => {}) }, [])
+  useEffect(() => { conversationRef.current = conversationId }, [conversationId])
+
+  function applyPreferences(next) {
+    setPreferences(next)
+    document.documentElement.dataset.theme = next.theme
+    if (!conversationRef.current) {
+      if (next.default_mode === 'documents') setChatMode('documents')
+      if (next.default_mode === 'deep') { setChatMode('general'); setResearchMode('deep') }
+    }
+  }
+
+  async function openConversation(id) {
+    if (loadingRef.current) abortRef.current?.abort()
+    const detail = await fetchConversation(id)
+    conversationRef.current = id; setConversationId(id)
+    window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, id)
+    setMessages(fromServer(detail.messages)); setSelectedDocumentIds(detail.document_ids || [])
+    setChatMode(detail.mode === 'documents' ? 'documents' : 'general')
+    setResearchMode(detail.mode === 'deep' ? 'deep' : 'standard'); setView('chat')
+  }
+
+  async function newChat() {
+    if (loadingRef.current) abortRef.current?.abort()
+    const mode = researchMode === 'deep' ? 'deep' : chatMode
+    const item = await createConversation(mode)
+    setConversations((current) => [item, ...current]); conversationRef.current = item.id
+    window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, item.id)
+    setConversationId(item.id); setMessages([]); setSelectedDocumentIds([]); setView('chat')
+  }
+
+  async function handleRename(item) {
+    const title = window.prompt('Rename conversation', item.title)
+    if (!title?.trim()) return
+    const updated = await renameConversation(item.id, title.trim())
+    setConversations((current) => current.map((entry) => entry.id === item.id ? updated : entry))
+  }
+  async function handleDelete(item) {
+    if (!window.confirm(`Delete “${item.title}”?`)) return
+    await deleteConversation(item.id)
+    setConversations((current) => current.filter((entry) => entry.id !== item.id))
+    if (conversationRef.current === item.id) {
+      window.localStorage.removeItem(ACTIVE_CONVERSATION_KEY)
+      conversationRef.current = null; setConversationId(null); setMessages([])
+    }
+  }
+
+  const submit = useCallback(async (query) => {
     const trimmed = query.trim()
-    if (!trimmed || isLoadingRef.current) return false
-
-    isLoadingRef.current = true
-    setIsLoading(true)
+    if (!trimmed || loadingRef.current) return false
+    loadingRef.current = true; setIsLoading(true)
+    const controller = new AbortController(); abortRef.current = controller
     const requestMode = chatMode
-    const requestDocumentIds = requestMode === 'documents' ? selectedDocumentIds : []
-    const userMessage = createMessage({
-      role: 'user',
-      content: trimmed,
-      mode: requestMode,
-      attachments: documents
-        .filter((item) => requestDocumentIds.includes(item.id))
-        .map((item) => ({
-          document_id: item.id,
-          filename: item.original_filename,
-          content_type: item.content_type,
-          file_size: item.file_size,
-          processing_status: item.processing_status,
-          indexing_status: item.indexing_status,
-        })),
-    })
-    setMessages((current) => [...current, userMessage])
-
+    const ids = requestMode === 'documents' ? selectedDocumentIds : []
+    setMessages((current) => [...current, createMessage({ role: 'user', content: trimmed, mode: requestMode, attachments: documents.filter((item) => ids.includes(item.id)).map((item) => ({ document_id: item.id, filename: item.original_filename, file_size: item.file_size, indexing_status: item.indexing_status })) })])
     let assistantId = null
-
-    function upsertAssistant(partial) {
-      if (!assistantId) {
-        const assistantMessage = createMessage({
-          role: 'assistant',
-          content: '',
-          ...partial,
-        })
-        assistantId = assistantMessage.id
-        setMessages((current) => [...current, assistantMessage])
-        return
-      }
-
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === assistantId ? { ...message, ...partial } : message,
-        ),
-      )
+    const upsert = (partial) => {
+      if (!assistantId) { const item = createMessage({ role: 'assistant', content: '', ...partial }); assistantId = item.id; setMessages((current) => [...current, item]); return }
+      setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, ...partial } : item))
     }
-
     try {
-      await streamChatQuery(trimmed, (fullText) => {
-        upsertAssistant({ content: fullText, isError: false, mode: requestMode })
-      }, {
-        conversationId: conversationIdRef.current,
-        mode: requestMode,
-        documentIds: requestDocumentIds,
-        researchMode,
-        onConversationId: (id) => {
-          conversationIdRef.current = id
-          setConversationId(id)
-        },
-        onMetadata: (metadata) => {
-          upsertAssistant({
-            mode: metadata.mode,
-            status: metadata.status,
-            citations: metadata.citations,
-            webCitations: metadata.webCitations,
-            researchPlan: metadata.researchPlan,
-            researchSummary: metadata.researchSummary,
-            evidenceConflicts: metadata.evidenceConflicts,
-            presentation: metadata.presentation,
-          })
-        },
+      await streamChatQuery(trimmed, (text) => upsert({ content: text, mode: requestMode }), {
+        conversationId: conversationRef.current, mode: requestMode, documentIds: ids,
+        researchMode, responseDepth: preferences.response_depth,
+        responseLanguage: preferences.response_language, signal: controller.signal,
+        onConversationId: (id) => { conversationRef.current = id; setConversationId(id); window.localStorage.setItem(ACTIVE_CONVERSATION_KEY, id) },
+        onMetadata: (metadata) => upsert({ mode: metadata.mode, status: metadata.status, citations: metadata.citations, webCitations: metadata.webCitations, researchPlan: metadata.researchPlan, researchSummary: metadata.researchSummary, evidenceConflicts: metadata.evidenceConflicts, presentation: metadata.presentation }),
       })
-      setSelectedDocumentIds([])
-      return true
+      await loadConversations(); return true
     } catch (error) {
-      upsertAssistant({
-        isError: true,
-        content:
-          error instanceof Error
-            ? error.message
-            : 'Something went wrong. Please try again.',
-      })
+      if (error?.name === 'AbortError') upsert({ content: 'Generation stopped.', isError: true })
+      else upsert({ content: error instanceof Error ? error.message : 'Request failed.', isError: true })
       return false
-    } finally {
-      isLoadingRef.current = false
-      setIsLoading(false)
-    }
-  }, [chatMode, documents, researchMode, selectedDocumentIds])
+    } finally { loadingRef.current = false; setIsLoading(false); abortRef.current = null }
+  }, [chatMode, documents, loadConversations, preferences, researchMode, selectedDocumentIds])
 
-  const handleModeChange = useCallback((nextMode) => {
-    setChatMode(nextMode)
-    if (nextMode === 'documents') setResearchMode('standard')
-    if (nextMode === 'general') setSelectedDocumentIds([])
-  }, [])
-
-  const handleDocumentUpsert = useCallback((document) => {
-    setDocuments((current) => [
-      document,
-      ...current.filter((item) => item.id !== document.id),
-    ])
-  }, [])
-
-  const handleAttachDocument = useCallback((documentId) => {
-    setChatMode('documents')
-    setSelectedDocumentIds((current) =>
-      current.includes(documentId) ? current : [...current, documentId],
-    )
-  }, [])
+  async function selectionChanged(ids) {
+    setSelectedDocumentIds(ids)
+    if (conversationRef.current) await updateConversationDocuments(conversationRef.current, ids)
+  }
+  async function selectChatMode(mode, nextResearchMode = 'standard') {
+    setChatMode(mode)
+    setResearchMode(nextResearchMode)
+    if (!conversationRef.current) return
+    const persistentMode = mode === 'documents' ? 'documents' : nextResearchMode === 'deep' ? 'deep' : 'general'
+    const updated = await updateConversation(conversationRef.current, { mode: persistentMode })
+    setConversations((current) => current.map((item) => item.id === updated.id ? updated : item))
+  }
+  function selectView(next) {
+    setView(next === 'research' ? 'chat' : next)
+    if (next === 'research') { setChatMode('general'); setResearchMode('deep') }
+  }
 
   return (
     <div className="app-shell">
-      <Header
-        metricsOpen={metricsOpen}
-        onToggleMetrics={() => setMetricsOpen((current) => !current)}
-      />
-      <main className="app-main">
-        {metricsOpen ? <UsageDashboard /> : null}
-        <DocumentPanel
-          documents={documents}
-          onDocumentsChange={setDocuments}
-          selectionEnabled={chatMode === 'documents'}
-          selectedDocumentIds={selectedDocumentIds}
-          onSelectionChange={setSelectedDocumentIds}
-        />
-        <ChatModeSelector
-          mode={chatMode}
-          researchMode={researchMode}
-          selectedCount={selectedDocumentIds.length}
-          onChange={handleModeChange}
-          onResearchModeChange={setResearchMode}
-          disabled={isLoading}
-        />
-        <ChatWindow
-          messages={messages}
-          isLoading={isLoading}
-          onExampleSelect={handleSubmit}
-          mode={chatMode}
-          researchMode={researchMode}
-        />
-        <SearchInput
-          onSubmit={handleSubmit}
-          disabled={isLoading}
-          documents={documents}
-          attachedDocumentIds={selectedDocumentIds}
-          onAttachDocument={handleAttachDocument}
-          onRemoveDocument={(documentId) =>
-            setSelectedDocumentIds((current) => current.filter((id) => id !== documentId))
-          }
-          onDocumentUpsert={handleDocumentUpsert}
-        />
+      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((value) => !value)} view={view} onView={selectView} conversations={conversations} activeId={conversationId} onSelectConversation={openConversation} onNewChat={newChat} onRename={handleRename} onDelete={handleDelete} search={conversationSearch} onSearch={setConversationSearch} />
+      <main className="workspace">
+        {view === 'documents' ? <DocumentLibrary onDocumentsChanged={(items) => setDocuments((current) => [...items, ...current.filter((old) => !items.some((item) => item.id === old.id))])} /> : null}
+        {view === 'usage' ? <UsageDashboard /> : null}
+        {view === 'settings' ? <SettingsPage onPreferences={applyPreferences} /> : null}
+        {view === 'chat' ? <div className="chat-workspace"><header className="workspace__top"><div><span>{researchMode === 'deep' ? 'Deep Research' : chatMode === 'documents' ? 'Document Chat' : 'General Chat'}</span><small>{conversationId ? 'Persistent conversation' : 'Start a new conversation'}</small></div>{isLoading ? <button type="button" onClick={() => abortRef.current?.abort()}>Stop generating</button> : null}</header><ChatModeSelector mode={chatMode} researchMode={researchMode} selectedCount={selectedDocumentIds.length} onSelect={(mode, nextResearchMode) => void selectChatMode(mode, nextResearchMode)} disabled={isLoading} /><ChatWindow messages={messages} isLoading={isLoading} onExampleSelect={submit} mode={chatMode} researchMode={researchMode} /><SearchInput onSubmit={submit} onStop={() => abortRef.current?.abort()} disabled={isLoading} documents={documents} attachedDocumentIds={selectedDocumentIds} onAttachDocument={(id) => { void selectChatMode('documents', 'standard'); void selectionChanged([...new Set([...selectedDocumentIds, id])]) }} onRemoveDocument={(id) => void selectionChanged(selectedDocumentIds.filter((value) => value !== id))} onDocumentUpsert={(document) => setDocuments((current) => [document, ...current.filter((item) => item.id !== document.id)])} /></div> : null}
       </main>
     </div>
   )

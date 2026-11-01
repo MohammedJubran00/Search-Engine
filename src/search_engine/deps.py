@@ -12,6 +12,7 @@ Communicates with: `core.security.decode_access_token`, `UserRepository`,
 """
 
 from collections.abc import AsyncIterator
+import logging
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
@@ -26,8 +27,10 @@ from src.search_engine.services.observability_service import (
     UsageRecord,
     observability,
 )
+from src.search_engine.repositories.usage_repository import UsageRepository
 
 NOT_AUTHENTICATED = "Not authenticated."
+logger = logging.getLogger(__name__)
 
 
 def _unauthorized() -> HTTPException:
@@ -65,6 +68,7 @@ async def get_current_user(
 
 async def get_usage_request(
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ) -> AsyncIterator[UsageRecord]:
     """Apply local user ceilings and finalize a content-free metric event."""
     try:
@@ -75,3 +79,20 @@ async def get_usage_request(
         yield record
     finally:
         await observability.finish(record)
+        try:
+            if not db.is_active:
+                await db.rollback()
+            await UsageRepository(db).add(
+                request_id=record.request_id,
+                user_id=record.user_id,
+                conversation_id=record.conversation_id,
+                provider="platform",
+                operation="chat",
+                status=record.status,
+                latency_ms=round(record.total_seconds * 1000),
+            )
+        except Exception:
+            # Metrics are best-effort and must not replace the route's real
+            # response when its transaction has already failed.
+            await db.rollback()
+            logger.exception("Unable to persist usage telemetry")

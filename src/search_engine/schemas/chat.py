@@ -17,6 +17,8 @@ from src.search_engine.research.presentation import AnswerPresentation
 
 ChatMode = Literal["general", "documents"]
 ResearchMode = Literal["standard", "deep"]
+ResponseDepth = Literal["auto", "concise", "balanced", "detailed"]
+ResponseLanguage = Literal["auto", "en", "ar"]
 AnswerStatusValue = Literal["answered", "insufficient_evidence"]
 
 
@@ -111,6 +113,8 @@ class ChatRequest(BaseModel):
     conversation_id: uuid.UUID | None = None
     mode: ChatMode = "general"
     research_mode: ResearchMode = "standard"
+    response_depth: ResponseDepth = "auto"
+    response_language: ResponseLanguage = "auto"
     document_ids: list[uuid.UUID] = Field(
         default_factory=list,
         max_length=settings.rag_chat_max_document_selection,

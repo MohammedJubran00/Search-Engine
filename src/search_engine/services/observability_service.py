@@ -4,7 +4,7 @@ import asyncio
 import time
 import uuid
 from collections import defaultdict, deque
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 
 from src.search_engine.core.config import settings
@@ -19,6 +19,8 @@ class UsageRecord:
     user_id: uuid.UUID
     started: float
     recorded_at: str
+    request_id: uuid.UUID = field(default_factory=uuid.uuid4)
+    conversation_id: uuid.UUID | None = None
     mode: str = "general"
     research_mode: str = "standard"
     status: str = "success"

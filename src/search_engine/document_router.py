@@ -1,9 +1,10 @@
 """Authenticated HTTP routes for private document management."""
 
+import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.search_engine.database.database import get_db
@@ -15,7 +16,7 @@ from src.search_engine.rag.storage import (
     FileTooLargeError,
     StorageOperationError,
 )
-from src.search_engine.schemas.document import DocumentResponse
+from src.search_engine.schemas.document import DocumentPage, DocumentResponse, IndexingJobResponse
 from src.search_engine.services.document_service import (
     DocumentNotFoundError,
     DocumentPersistenceError,
@@ -33,8 +34,10 @@ from src.search_engine.services.document_indexing_service import (
     DocumentIndexingService,
 )
 from src.search_engine.services.observability_service import observability
+from src.search_engine.services.indexing_queue_service import IndexingQueueService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post(
@@ -70,7 +73,12 @@ async def upload_document(
         ) from None
     finally:
         await file.close()
-    return DocumentResponse.model_validate(result.document)
+    await IndexingQueueService(db).enqueue(document_id=result.document.id, user_id=user.id)
+    await db.commit()
+    refreshed = await DocumentService(db).get_for_user(
+        document_id=result.document.id, user_id=user.id
+    )
+    return DocumentResponse.model_validate(refreshed)
 
 
 @router.get("", response_model=list[DocumentResponse])
@@ -80,6 +88,25 @@ async def list_documents(
 ) -> list[DocumentResponse]:
     documents = await DocumentService(db).list_for_user(user.id)
     return [DocumentResponse.model_validate(document) for document in documents]
+
+
+@router.get("/page", response_model=DocumentPage)
+async def page_documents(
+    search: str | None = Query(default=None, max_length=255),
+    indexing_status: str | None = Query(default=None),
+    limit: int = Query(default=24, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+) -> DocumentPage:
+    if indexing_status not in {None, "queued", "processing", "completed", "failed"}:
+        raise HTTPException(status_code=400, detail="Invalid indexing status.")
+    items, total = await DocumentService(db).page_for_user(
+        user.id, search=search, status=indexing_status, limit=limit, offset=offset
+    )
+    return DocumentPage(
+        items=[DocumentResponse.model_validate(item) for item in items],
+        total=total, limit=limit, offset=offset,
+    )
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
@@ -125,7 +152,7 @@ async def index_document(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DocumentResponse:
-    """Explicitly prepare one owned upload for AI questions."""
+    """Compatibility endpoint: enqueue or retry indexing without blocking HTTP."""
     documents = DocumentService(db)
     try:
         document = await documents.get_for_user(
@@ -134,11 +161,8 @@ async def index_document(
         )
         if document.indexing_status == "completed":
             return DocumentResponse.model_validate(document)
-        await observability.record_embedding_request(user.id)
-        await DocumentIndexingService(db).index(
-            document_id=document_id,
-            user_id=user.id,
-        )
+        await IndexingQueueService(db).enqueue(document_id=document_id, user_id=user.id)
+        await db.commit()
         refreshed = await documents.get_for_user(
             document_id=document_id,
             user_id=user.id,
@@ -164,3 +188,23 @@ async def index_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unable to prepare the document for AI questions.",
         ) from None
+    except Exception:
+        logger.exception("Unable to enqueue document %s for indexing", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to queue the document for indexing.",
+        ) from None
+
+
+@router.get("/{document_id}/index-job", response_model=IndexingJobResponse | None)
+async def get_indexing_job(
+    document_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> IndexingJobResponse | None:
+    try:
+        await DocumentService(db).get_for_user(document_id=document_id, user_id=user.id)
+    except DocumentNotFoundError:
+        raise HTTPException(status_code=404, detail="Document not found.") from None
+    job = await IndexingQueueService(db).latest(document_id=document_id, user_id=user.id)
+    return IndexingJobResponse.model_validate(job) if job else None

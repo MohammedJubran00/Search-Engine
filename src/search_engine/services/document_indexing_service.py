@@ -8,6 +8,7 @@ atomically swaps chunks and marks that generation complete.
 import asyncio
 import uuid
 from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -101,6 +102,7 @@ class DocumentIndexingService:
         document_id: uuid.UUID,
         user_id: uuid.UUID,
         supersede_processing: bool = False,
+        progress: Callable[[str, int, int | None], Awaitable[None]] | None = None,
     ) -> DocumentIndexingResult:
         try:
             claim = await self._index.claim(
@@ -117,9 +119,13 @@ class DocumentIndexingService:
 
         try:
             chunks = await self._prepare_chunks(claim)
+            if progress:
+                await progress("chunked", 0, len(chunks))
             vectors = await self._embeddings.embed_documents(
                 [chunk.text for chunk in chunks]
             )
+            if progress:
+                await progress("embedded", len(vectors), len(chunks))
             chunk_count = await self._index.replace(
                 document_id=document_id,
                 user_id=user_id,
@@ -128,6 +134,8 @@ class DocumentIndexingService:
                 embeddings=vectors,
             )
             await self._session.commit()
+            if progress:
+                await progress("stored", chunk_count, chunk_count)
             return DocumentIndexingResult(
                 document_id=document_id,
                 generation=claim.generation,

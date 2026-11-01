@@ -1,0 +1,3 @@
+Local browser verification document.
+
+The project goal is to validate secure upload, durable indexing status, and document ownership.

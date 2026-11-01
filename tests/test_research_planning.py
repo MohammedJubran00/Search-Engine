@@ -42,7 +42,9 @@ def test_standard_question_skips_planner(mock_planner, mock_agent) -> None:
 
 @patch("src.search_engine.main.agent.invoke")
 @patch("src.search_engine.main.planner_model")
-def test_deep_research_uses_typed_bounded_plan(mock_planner, mock_agent) -> None:
+@patch("src.search_engine.main.tavily")
+def test_deep_research_uses_typed_bounded_plan(mock_tavily, mock_planner, mock_agent) -> None:
+    mock_tavily.invoke.return_value = {"results": []}
     mock_planner.invoke.return_value = PlannerOutput(
         subquestions=["AWS services", "Azure services", "Pricing assumptions"]
     )
@@ -62,13 +64,16 @@ def test_deep_research_uses_typed_bounded_plan(mock_planner, mock_agent) -> None
         "Pricing assumptions",
     ]
     sent_messages = mock_agent.call_args.args[0]["messages"]
-    assert "Deep Research plan" in sent_messages[-2][1]
+    assert any("Deep Research plan" in message[1] for message in sent_messages)
+    assert mock_tavily.invoke.call_count == 3
     assert mock_agent.call_args.kwargs["config"]["recursion_limit"] > 0
 
 
 @patch("src.search_engine.main.agent.invoke")
 @patch("src.search_engine.main.planner_model")
-def test_planner_failure_degrades_to_original_question(mock_planner, mock_agent) -> None:
+@patch("src.search_engine.main.tavily")
+def test_planner_failure_degrades_to_original_question(mock_tavily, mock_planner, mock_agent) -> None:
+    mock_tavily.invoke.return_value = {"results": []}
     mock_planner.invoke.side_effect = RuntimeError("quota")
     mock_agent.return_value = {"messages": [AIMessage(content="Fallback answer")]}
     result = app.invoke(

@@ -17,6 +17,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Text,
     func,
@@ -44,6 +45,7 @@ class Document(Base):
             name="ck_documents_processing_status",
         ),
         CheckConstraint("file_size >= 0", name="ck_documents_file_size_nonnegative"),
+        Index("ix_documents_user_created", "user_id", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -90,6 +92,7 @@ class Document(Base):
     index_state: Mapped["DocumentIndexState | None"] = relationship(
         back_populates="document",
         uselist=False,
+        cascade="all, delete-orphan",
         passive_deletes=True,
     )
 

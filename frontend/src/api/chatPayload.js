@@ -4,8 +4,13 @@ export function buildChatPayload(query, options = {}) {
     mode = 'general',
     documentIds = [],
     researchMode = 'standard',
+    responseDepth = 'auto',
+    responseLanguage = 'auto',
   } = options
-  const body = { query, mode, research_mode: mode === 'general' ? researchMode : 'standard' }
+  const body = {
+    query, mode, research_mode: mode === 'general' ? researchMode : 'standard',
+    response_depth: responseDepth, response_language: responseLanguage,
+  }
   if (conversationId) body.conversation_id = conversationId
   if (mode === 'documents' && documentIds.length) {
     body.document_ids = [...new Set(documentIds)]

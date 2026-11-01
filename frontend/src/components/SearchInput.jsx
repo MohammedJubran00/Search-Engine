@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DOCUMENT_FILE_ACCEPT,
+  fetchDocument,
   formatDocumentBytes,
-  indexDocument,
   uploadDocument,
   validateDocumentFile,
 } from '../api/documents'
@@ -47,6 +47,17 @@ export default function SearchInput({
     if (!disabled) textareaRef.current?.focus()
   }, [disabled])
 
+  useEffect(() => {
+    const pending = attachedDocuments.filter((item) => ['queued', 'processing'].includes(item.indexing_status))
+    if (!pending.length) return undefined
+    const timer = window.setInterval(async () => {
+      for (const item of pending) {
+        try { onDocumentUpsert(await fetchDocument(item.id)) } catch { /* next poll retries */ }
+      }
+    }, 2000)
+    return () => window.clearInterval(timer)
+  }, [attachedDocuments, onDocumentUpsert])
+
   function handleFiles(files) {
     const next = Array.from(files || []).map((file) => ({
       key: `${file.name}-${file.size}-${file.lastModified}`,
@@ -72,7 +83,7 @@ export default function SearchInput({
       onDocumentUpsert(uploaded)
       onAttachDocument(uploaded.id)
       setPendingFiles((current) => current.filter((entry) => entry.key !== item.key))
-      setComposerStatus('Document uploaded. Prepare it before asking AI questions.')
+      setComposerStatus('Document uploaded. Automatic indexing is queued.')
     } catch (error) {
       setPendingFiles((current) => current.map((entry) =>
         entry.key === item.key
@@ -82,28 +93,12 @@ export default function SearchInput({
     }
   }
 
-  async function handlePrepare(document) {
-    if (!window.confirm(
-      `Prepare “${document.original_filename}” for AI questions? This calls Gemini embeddings and may consume API quota.`,
-    )) return
-    onDocumentUpsert({ ...document, indexing_status: 'processing' })
-    setComposerStatus('Preparing the document for AI questions…')
-    try {
-      const indexed = await indexDocument(document.id)
-      onDocumentUpsert(indexed)
-      setComposerStatus('Document indexed and ready.')
-    } catch (error) {
-      onDocumentUpsert({ ...document, indexing_status: 'failed' })
-      setComposerStatus(error instanceof Error ? error.message : 'Could not prepare the document.')
-    }
-  }
-
   async function handleSubmit() {
     if (!canSend) return
-    if (await onSubmit(value)) {
-      setValue('')
-      setComposerStatus('')
-    }
+    const submitted = value
+    setValue('')
+    setComposerStatus('')
+    await onSubmit(submitted)
   }
 
   return (
@@ -126,9 +121,8 @@ export default function SearchInput({
               <span className="attachment-card__icon">{fileKind(document.original_filename)}</span>
               <span className="attachment-card__text">
                 <strong>{document.original_filename}</strong>
-                <small>{formatDocumentBytes(document.file_size)} · {document.indexing_status === 'completed' ? 'Indexed and ready' : document.indexing_status === 'processing' ? 'Indexing…' : document.indexing_status === 'failed' ? 'Indexing failed' : 'Uploaded, not indexed'}</small>
+                <small>{formatDocumentBytes(document.file_size)} · {document.indexing_status === 'completed' ? 'Indexed and ready' : document.indexing_status === 'processing' ? 'Indexing…' : document.indexing_status === 'queued' ? 'Queued for indexing' : document.indexing_status === 'failed' ? 'Indexing failed' : 'Uploaded, not indexed'}</small>
               </span>
-              {document.indexing_status !== 'completed' && document.indexing_status !== 'processing' ? <button type="button" onClick={() => handlePrepare(document)}>Prepare for AI questions</button> : null}
               <button type="button" aria-label={`Detach ${document.original_filename}`} onClick={() => onRemoveDocument(document.id)}>×</button>
             </article>
           ))}
@@ -168,7 +162,7 @@ export default function SearchInput({
           {disabled ? <span className="search-input__spinner" aria-hidden="true" /> : 'Send'}
         </button>
       </div>
-      <p className="search-input__hint">Attachments upload locally first. Preparing them for AI questions is a separate confirmed action.</p>
+      <p className="search-input__hint">Uploads index automatically. Only indexed documents can be used for answers.</p>
     </form>
   )
 }

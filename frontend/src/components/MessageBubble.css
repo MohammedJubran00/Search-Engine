@@ -28,6 +28,10 @@
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
+.message__body[dir="rtl"] { text-align: right; unicode-bidi: plaintext; }
+.message__body[dir="rtl"] pre,
+.message__body[dir="rtl"] code,
+.message__body[dir="rtl"] a { direction: ltr; unicode-bidi: isolate; text-align: left; }
 
 .message--user .message__body {
   color: var(--text);

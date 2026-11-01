@@ -70,7 +70,7 @@ def test_metrics_endpoint_is_private_to_current_user(client: TestClient) -> None
     first_headers = auth_headers(client)
     first = client.get("/api/metrics", headers=first_headers)
     assert first.status_code == 200
-    assert first.json()["retention"] == "process_local_bounded"
+    assert first.json()["retention"] == "persistent"
 
     second_headers = auth_headers(client)
     second = client.get("/api/metrics", headers=second_headers)

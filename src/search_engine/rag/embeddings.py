@@ -69,6 +69,7 @@ class GeminiEmbeddingProvider:
         max_retries: int = settings.rag_embedding_max_retries,
         retry_base_seconds: float = settings.rag_embedding_retry_base_seconds,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        on_request: Callable[[], None] | None = None,
     ) -> None:
         _validate_provider_configuration(
             dimensions=dimensions,
@@ -95,6 +96,7 @@ class GeminiEmbeddingProvider:
         self.max_retries = max_retries
         self.retry_base_seconds = retry_base_seconds
         self._sleep = sleep
+        self._on_request = on_request
 
     async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed unique nonblank texts in bounded batches and restore order."""
@@ -166,6 +168,8 @@ class GeminiEmbeddingProvider:
     ) -> _EmbeddingResult:
         for attempt in range(self.max_retries + 1):
             try:
+                if self._on_request:
+                    self._on_request()
                 return await operation()
             except Exception as exc:
                 retryable = _is_retryable(exc)

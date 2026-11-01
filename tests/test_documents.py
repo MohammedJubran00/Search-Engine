@@ -357,17 +357,17 @@ def _index_api_document(*, indexing_status: str) -> SimpleNamespace:
     )
 
 
-@patch("src.search_engine.document_router.DocumentIndexingService")
+@patch("src.search_engine.document_router.IndexingQueueService")
 @patch("src.search_engine.document_router.DocumentService")
-def test_manual_indexing_endpoint_is_authenticated_and_explicit(
+def test_manual_indexing_endpoint_enqueues_without_blocking(
     mock_documents,
-    mock_indexing,
+    mock_queue,
     client: TestClient,
 ) -> None:
     before = _index_api_document(indexing_status="not_indexed")
-    after = SimpleNamespace(**{**before.__dict__, "indexing_status": "completed"})
+    after = SimpleNamespace(**{**before.__dict__, "indexing_status": "queued"})
     mock_documents.return_value.get_for_user = AsyncMock(side_effect=[before, after])
-    mock_indexing.return_value.index = AsyncMock()
+    mock_queue.return_value.enqueue = AsyncMock()
 
     unauthorized = client.post(f"/api/documents/{before.id}/index")
     assert unauthorized.status_code == 401
@@ -377,15 +377,15 @@ def test_manual_indexing_endpoint_is_authenticated_and_explicit(
         headers=auth_headers(client),
     )
     assert response.status_code == 200
-    assert response.json()["indexing_status"] == "completed"
-    mock_indexing.return_value.index.assert_awaited_once()
+    assert response.json()["indexing_status"] == "queued"
+    mock_queue.return_value.enqueue.assert_awaited_once()
 
 
-@patch("src.search_engine.document_router.DocumentIndexingService")
+@patch("src.search_engine.document_router.IndexingQueueService")
 @patch("src.search_engine.document_router.DocumentService")
 def test_manual_indexing_reuses_completed_index_without_provider_call(
     mock_documents,
-    mock_indexing,
+    mock_queue,
     client: TestClient,
 ) -> None:
     document = _index_api_document(indexing_status="completed")
@@ -395,14 +395,14 @@ def test_manual_indexing_reuses_completed_index_without_provider_call(
         headers=auth_headers(client),
     )
     assert response.status_code == 200
-    mock_indexing.return_value.index.assert_not_called()
+    mock_queue.return_value.enqueue.assert_not_called()
 
 
-@patch("src.search_engine.document_router.DocumentIndexingService")
+@patch("src.search_engine.document_router.IndexingQueueService")
 @patch("src.search_engine.document_router.DocumentService")
-def test_manual_indexing_hides_foreign_document_and_handles_concurrency(
+def test_manual_indexing_hides_foreign_document_and_reuses_active_job(
     mock_documents,
-    mock_indexing,
+    mock_queue,
     client: TestClient,
 ) -> None:
     headers = auth_headers(client)
@@ -412,34 +412,32 @@ def test_manual_indexing_hides_foreign_document_and_handles_concurrency(
     )
     foreign = client.post(f"/api/documents/{document.id}/index", headers=headers)
     assert foreign.status_code == 404
-    mock_indexing.return_value.index.assert_not_called()
+    mock_queue.return_value.enqueue.assert_not_called()
 
     mock_documents.return_value.get_for_user = AsyncMock(return_value=document)
-    mock_indexing.return_value.index = AsyncMock(
-        side_effect=ConcurrentDocumentIndexingError,
-    )
+    mock_documents.return_value.get_for_user = AsyncMock(side_effect=[document, document])
+    mock_queue.return_value.enqueue = AsyncMock()
     concurrent = client.post(f"/api/documents/{document.id}/index", headers=headers)
-    assert concurrent.status_code == 409
+    assert concurrent.status_code == 200
+    mock_queue.return_value.enqueue.assert_awaited_once()
 
 
-@patch("src.search_engine.document_router.DocumentIndexingService")
+@patch("src.search_engine.document_router.IndexingQueueService")
 @patch("src.search_engine.document_router.DocumentService")
-def test_manual_indexing_sanitizes_provider_quota_failure(
+def test_manual_indexing_sanitizes_queue_failure(
     mock_documents,
-    mock_indexing,
+    mock_queue,
     client: TestClient,
 ) -> None:
     document = _index_api_document(indexing_status="not_indexed")
     mock_documents.return_value.get_for_user = AsyncMock(return_value=document)
-    mock_indexing.return_value.index = AsyncMock(
-        side_effect=DocumentIndexingQuotaError("provider internals"),
-    )
+    mock_queue.return_value.enqueue = AsyncMock(side_effect=RuntimeError("provider internals"))
     response = client.post(
         f"/api/documents/{document.id}/index",
         headers=auth_headers(client),
     )
-    assert response.status_code == 503
-    assert "quota or capacity" in response.json()["detail"]
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Unable to queue the document for indexing."
     assert "provider internals" not in response.text
 
 
@@ -567,7 +565,7 @@ def test_document_endpoints_enforce_ownership_and_cleanup(
     body = upload.json()
     document_id = body["id"]
     assert body["processing_status"] == "completed"
-    assert body["indexing_status"] == "not_indexed"
+    assert body["indexing_status"] == "queued"
     assert body["original_filename"] == "مرحبا.txt"
     assert "storage_path" not in body
     assert len(list(tmp_path.iterdir())) == 1
@@ -575,7 +573,7 @@ def test_document_endpoints_enforce_ownership_and_cleanup(
     listing = client.get("/api/documents", headers=owner_headers)
     assert listing.status_code == 200
     assert document_id in {item["id"] for item in listing.json()}
-    assert listing.json()[0]["indexing_status"] == "not_indexed"
+    assert listing.json()[0]["indexing_status"] == "queued"
 
     retrieved = client.get(
         f"/api/documents/{document_id}",

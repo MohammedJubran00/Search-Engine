@@ -145,6 +145,14 @@ class DocumentService:
     async def list_for_user(self, user_id: uuid.UUID) -> list[Document]:
         return await self._documents.list_for_user(user_id)
 
+    async def page_for_user(
+        self, user_id: uuid.UUID, *, search: str | None,
+        status: str | None, limit: int, offset: int,
+    ) -> tuple[list[Document], int]:
+        return await self._documents.page_for_user(
+            user_id, search=search, status=status, limit=limit, offset=offset
+        )
+
     async def get_for_user(
         self,
         *,

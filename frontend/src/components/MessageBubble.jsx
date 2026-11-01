@@ -1,6 +1,9 @@
 import Markdown from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { formatDocumentBytes } from '../api/documents'
 import { isSafeHref } from '../api/safeLinks'
 import StructuredAnswer from './StructuredAnswer'
@@ -75,11 +78,12 @@ export default function MessageBubble({ message }) {
   ]
     .filter(Boolean)
     .join(' ')
+  const direction = /[\u0600-\u06ff]/.test(message.content || '') ? 'rtl' : 'auto'
 
   return (
     <article className={className}>
       <span className="message__label">{isUser ? 'You' : message.isError ? 'Error' : 'AI'}</span>
-      <div className="message__body">
+      <div className="message__body" dir={direction}>
         {isUser || message.isError ? (
           <p className="message__plain">{message.content}</p>
         ) : message.presentation?.type && message.presentation.type !== 'standard' ? (
@@ -87,7 +91,8 @@ export default function MessageBubble({ message }) {
         ) : (
           <div className="message__markdown">
             <Markdown
-              remarkPlugins={[remarkGfm, remarkBreaks]}
+              remarkPlugins={[remarkGfm, remarkBreaks, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
               components={markdownComponents}
             >
               {message.content}

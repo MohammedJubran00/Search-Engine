@@ -4,8 +4,7 @@ export default function ChatModeSelector({
   mode,
   researchMode,
   selectedCount,
-  onChange,
-  onResearchModeChange,
+  onSelect,
   disabled,
 }) {
   return (
@@ -16,10 +15,7 @@ export default function ChatModeSelector({
           className={mode === 'general' && researchMode === 'standard' ? 'chat-mode__option chat-mode__option--active' : 'chat-mode__option'}
           aria-pressed={mode === 'general' && researchMode === 'standard'}
           disabled={disabled}
-          onClick={() => {
-            onChange('general')
-            onResearchModeChange('standard')
-          }}
+          onClick={() => onSelect('general', 'standard')}
         >
           General Chat
         </button>
@@ -28,7 +24,7 @@ export default function ChatModeSelector({
           className={mode === 'documents' ? 'chat-mode__option chat-mode__option--active' : 'chat-mode__option'}
           aria-pressed={mode === 'documents'}
           disabled={disabled}
-          onClick={() => onChange('documents')}
+          onClick={() => onSelect('documents', 'standard')}
         >
           Document Chat
         </button>
@@ -38,10 +34,7 @@ export default function ChatModeSelector({
           aria-pressed={mode === 'general' && researchMode === 'deep'}
           disabled={disabled}
           title="Plans several bounded web research questions and may use more quota."
-          onClick={() => {
-            onChange('general')
-            onResearchModeChange(researchMode === 'deep' ? 'standard' : 'deep')
-          }}
+          onClick={() => onSelect('general', researchMode === 'deep' ? 'standard' : 'deep')}
         >
           Deep Research
         </button>
@@ -49,7 +42,7 @@ export default function ChatModeSelector({
       <p>
         {mode === 'documents'
           ? selectedCount
-            ? `${selectedCount} indexed document${selectedCount === 1 ? '' : 's'} selected.`
+            ? `${selectedCount} document${selectedCount === 1 ? '' : 's'} selected. Readiness is shown on each attachment.`
             : 'Using all of your indexed documents.'
           : researchMode === 'deep'
             ? 'Creates a bounded research plan and may use more Gemini and Tavily quota.'

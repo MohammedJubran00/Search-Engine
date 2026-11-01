@@ -56,3 +56,15 @@ class MessageRepository:
             )
         )
         return list(result.scalars().all())
+
+    async def page_for_conversation(
+        self, conversation_id: uuid.UUID, *, limit: int, offset: int
+    ) -> list[Message]:
+        result = await self._session.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(reversed(result.scalars().all()))

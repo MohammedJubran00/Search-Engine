@@ -1,7 +1,8 @@
 # RAG module boundary
 
-This package is preparation for document-grounded chat. It is deliberately not
-connected to the current FastAPI routes or LangGraph agent yet.
+This package implements the document-grounded path used by the authenticated
+FastAPI chat routes. It remains separate from web research: Document Chat never
+silently falls back to Tavily.
 
 Planned flow:
 
@@ -12,12 +13,12 @@ Planned flow:
 3. Parse text with PyMuPDF, python-docx, or the standard library.
 4. Split text with `langchain-text-splitters` using the configured character
    size and overlap.
-5. Generate vectors with the existing Gemini integration.
+5. Queue a durable indexing job and generate vectors in the separate worker.
 6. Store document/chunk metadata and vectors in PostgreSQL with pgvector.
 7. Require `user_id` in every document and similarity query; optional document
    filters are applied in addition to that ownership predicate.
-8. Feed retrieved context into the existing streaming response path, retaining
-   Tavily as a policy-controlled fallback.
+8. Feed retrieved context into the grounded answer service and existing SSE
+   path; Tavily remains exclusive to General/Deep Research modes.
 
 The protocols in `contracts.py` keep parser, embedding, and persistence details
 replaceable while matching the project's existing service/repository layering.
@@ -32,14 +33,14 @@ replaceable while matching the project's existing service/repository layering.
 - `gemini-embedding-001` is configured for 1,536-dimensional output. This is a
   supported, recommended size that permits direct pgvector `vector` HNSW or
   IVFFlat indexing while using half the vector storage of 3,072 dimensions.
-- Chunk embeddings are nullable until the future ingestion phase generates
-  them. The schema migration freezes the vector dimension at 1,536; changing
+- Chunk embeddings are nullable while an upload is queued and until its worker
+  job generates them. The schema freezes the vector dimension at 1,536; changing
   the configured model or dimension later requires a coordinated migration and
   re-embedding of stored chunks.
 
 ## Phase 4 embedding requirements
 
-The future embedding provider must use all of the following settings together:
+The embedding provider uses all of the following settings together:
 
 - `RAG_EMBEDDING_MODEL=models/gemini-embedding-001`
 - `RAG_EMBEDDING_DIMENSIONS=1536` as the API output dimensionality
@@ -55,7 +56,7 @@ Document and query vectors must always use the same model, dimension, and
 normalization procedure.
 
 The installed `langchain-google-genai` embedding class accepts task type and
-output dimensionality per operation. A future implementation should pass the
+output dimensionality per operation. The implementation passes the
 document and query task settings to their respective operations; it must not
 set one global task type that overrides both paths.
 
@@ -69,7 +70,7 @@ thread. Uploaded files are private and are not mounted as static assets.
 DOCX validation also limits total expanded archive bytes to
 `RAG_MAX_DOCX_UNCOMPRESSED_BYTES` before parsing.
 
-For Phase 2, `completed` means only that the original file was stored and its
+`processing_status=completed` means only that the original file was stored and its
 text was successfully extracted. It does not mean chunked, embedded, or
 indexed. Rejected, empty, corrupt, and scanned/image-only documents leave no
 database row or stored file. `pending`, `processing`, and `failed` remain
@@ -125,25 +126,33 @@ print. Use `--chunk-size` and `--chunk-overlap` to compare configurations.
 Upload parsing and vector indexing have independent lifecycle state. The
 existing `documents.processing_status=completed` still means that secure
 storage and text extraction succeeded. `document_index_states.status` tracks
-only vector indexing with `not_indexed`, `processing`, `completed`, and
-`failed` states. A monotonically increasing generation prevents two workers
+only vector indexing with `not_indexed`, `queued`, `processing`, `completed`,
+and `failed` states. A monotonically increasing generation prevents two workers
 from finalizing the same document concurrently.
+
+Successful uploads create an idempotent PostgreSQL `indexing_jobs` row and move
+the vector lifecycle to `queued`. Run
+`uv run python -m src.search_engine.indexing_worker` under a process supervisor.
+The worker claims work with `FOR UPDATE SKIP LOCKED`, records actual stages and
+completed/total chunk counts, and records each Gemini embedding request attempt
+as a content-free usage event. The HTTP retry endpoint only queues work; it
+never performs paid calls inline.
 
 Indexing first commits a short ownership-scoped generation claim. Parsing,
 chunking, and Gemini calls then run without an open database transaction. The
 final transaction validates every vector, deletes the prior chunk set, inserts
 the complete replacement, and marks that generation completed. A failure
 rolls back that transaction, records a safe failure status, and leaves a prior
-valid index intact. Uploads do not trigger this workflow automatically.
+valid index intact. Uploads enqueue this workflow automatically.
 
-Gemini document requests use `RETRIEVAL_DOCUMENT`; query support uses
-`RETRIEVAL_QUERY` but is not connected to retrieval. Reduced 1,536-dimensional
+Gemini document requests use `RETRIEVAL_DOCUMENT`; retrieval queries use
+`RETRIEVAL_QUERY`. Reduced 1,536-dimensional
 vectors are validated for count, finite values, and nonzero norm, then L2
 normalized. Requests use configurable batches up to Gemini's 100-text limit,
 bounded concurrency, exponential retry for transient capacity/rate errors,
 and per-call duplicate text elimination.
 
-Migration `f7a9c2d4e6b8` must be reviewed and applied manually before indexing.
+The current Alembic head must be reviewed and applied before indexing.
 After that, explicitly index an existing document from a trusted local shell:
 
 ```powershell
@@ -223,11 +232,11 @@ query behavior before proposing a migration such as an HNSW cosine index.
 
 ## Phase 6 grounded answer generation
 
-`RagAnswerService` is a backend-only orchestration service. It accepts a
+`RagAnswerService` is the grounded orchestration service used by Document Chat. It accepts a
 trusted user UUID, calls `SemanticRetrievalService` exactly once, ends the
 read-only database transaction, builds bounded evidence, and then calls a
-dedicated deterministic Gemini chat client. It is not connected to FastAPI,
-the existing chat routes, LangGraph, Tavily, SSE, or the frontend.
+dedicated deterministic Gemini chat client. It is connected to FastAPI/SSE and
+the frontend, but deliberately remains independent of LangGraph and Tavily.
 
 The context builder removes empty and normalized-identical chunks, keeps rank
 order, assigns stable `S1`, `S2`, ... labels, and uses fair per-source token
@@ -338,24 +347,23 @@ Application limits reduce accidental quota use but cannot guarantee zero
 billing or override Google account/provider quotas. Real document chat may
 perform one query embedding, compatible token-count operations, and one
 answer generation. Quota exhaustion returns a safe error and never falls back
-to another paid provider. No automatic indexing, reranking, caching, or paid
-service was added.
+to another paid provider. No reranking, caching, or fallback paid service is
+added by the chat path.
 
-## Phase 7.5 attachment and manual-indexing workflow
+## Automatic attachment and indexing workflow
 
-The primary upload workflow now lives in the chat composer. A user can stage
-multiple PDF, DOCX, or TXT files, remove them before upload, upload them to
-private storage, attach existing owned uploads, and see parsing/indexing state.
-Uploading remains a local storage and parsing operation; it never starts
-Gemini embeddings. Unindexed attachments block sending while preserving the
-question draft and expose an explicit **Prepare for AI questions** action.
+Uploads are available from the compact composer and the paginated Document
+Library. A user can stage multiple PDF, DOCX, or TXT files, remove them before
+upload, attach existing owned uploads, and see separate parsing and indexing
+state. A successful upload atomically creates a durable queued job; the
+request itself never waits for or makes Gemini calls. Unready attachments block
+Document Chat until the supervised worker completes their vectors.
 
 `POST /api/documents/{document_id}/index` is JWT-protected and calls the
-existing retry-safe `DocumentIndexingService` only after the user confirms in
-the UI that Gemini quota may be consumed. Missing and foreign documents share
-the same 404 response, concurrent work returns 409, provider quota exhaustion
-returns a sanitized 503, and an already completed index is returned without
-embedding the document again. No client-supplied user ID is accepted.
+idempotent queue service for retry/backward compatibility. Missing and foreign
+documents share the same 404 response, an already completed index is returned
+without another job, and duplicate active jobs are prevented by a partial
+unique database index. No client-supplied user ID is accepted.
 
 The versioned message envelope now also stores server-resolved attachment
 metadata on the user turn, so filename, media type, size, and state survive a
@@ -364,17 +372,17 @@ reload without trusting client-supplied metadata or adding a migration.
 ## Private operational metrics
 
 Authenticated users can inspect content-free operational totals at
-`GET /api/metrics` or from the frontend Usage panel. The in-process collector
-tracks bounded timing, source/search counts, provider-reported token usage,
-embedding job attempts, and error counts. It never stores prompts, answers,
-document text, access tokens, or another user's identifiers. Request ceilings
-are enforced per user with `USAGE_DAILY_REQUEST_LIMIT` and
-`USAGE_MAX_CONCURRENT_REQUESTS`.
+`GET /api/metrics` or from the frontend Usage panel, which refreshes every
+three seconds. Provider and platform events persist in PostgreSQL and are
+owner-scoped. They track final request state, latency, actual Tavily calls,
+Gemini generation calls, embedding attempts, and provider-reported token usage
+when available. They never store prompts, answers, document text, tokens, or
+credentials. Process-local request ceilings are still enforced per user with
+`USAGE_DAILY_REQUEST_LIMIT` and `USAGE_MAX_CONCURRENT_REQUESTS`.
 
-This is intentionally a local development control, not durable billing
-telemetry: retained events are bounded by `USAGE_EVENT_RETENTION` and all
-metrics reset when the API process restarts. Token totals can be zero when the
-provider does not report usage metadata.
+This is operational telemetry, not a provider billing ledger. Values that the
+SDK does not expose remain zero or are explicitly marked estimated; exact
+prices, quotas, and credits are never fabricated.
 Document-chat citations remain server-validated and evidence excerpts are
 collapsed by default in the UI.
 
@@ -388,10 +396,9 @@ DOCX limit was intentionally not increased.
 Indexing is also bounded by `RAG_INDEXING_MAX_CHUNKS` (default `5000`). The
 limit is checked after local parsing/chunking and before any embedding request,
 so an unexpectedly large document cannot silently consume unbounded provider
-quota. Cancelling the indexing request records the active generation as failed
-and preserves the previous valid chunk set. Indexing remains a synchronous
-authenticated request; very large documents can take long enough to hit an
-external proxy timeout, so a durable local job worker remains a future option.
+quota. Worker failure records the active generation as failed, preserves the
+previous valid chunk set, and leaves a safe retry path. Indexing is performed
+only by the durable PostgreSQL-backed worker rather than an HTTP request.
 
 ## Adaptive document context and bounded conversation history
 

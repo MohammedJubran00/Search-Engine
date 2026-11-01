@@ -59,6 +59,9 @@ export async function streamChatQuery(query, onDelta, options = {}) {
     mode,
     documentIds,
     researchMode,
+    responseDepth,
+    responseLanguage,
+    signal,
   } = options
   let response
 
@@ -70,8 +73,9 @@ export async function streamChatQuery(query, onDelta, options = {}) {
         Accept: 'text/event-stream',
       },
       body: JSON.stringify(
-        buildChatPayload(query, { conversationId, mode, documentIds, researchMode }),
+        buildChatPayload(query, { conversationId, mode, documentIds, researchMode, responseDepth, responseLanguage }),
       ),
+      signal,
     })
   } catch {
     throw new Error(UNREACHABLE)

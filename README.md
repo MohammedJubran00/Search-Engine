@@ -10,19 +10,23 @@ operated in production.
 
 ## Features
 
-- JWT signup, login, refresh, logout, and user-scoped conversation history.
+- JWT signup, login, refresh, logout, searchable multi-conversation history,
+  rename/delete, and durable per-conversation document selection.
 - Streaming PDF, DOCX, and TXT upload with safe storage, parsing, metadata,
   persistence, and deletion.
-- Explicit manual indexing with structure-aware chunking, conservative PDF
+- Automatic durable queued indexing with structure-aware chunking, conservative PDF
   header/footer removal, normalized 1536-dimensional Gemini embeddings,
-  bounded retries/concurrency, and atomic chunk replacement.
+  bounded retries/concurrency, stage progress, retry, and atomic chunk replacement.
 - Owner-filtered pgvector cosine retrieval and optional document selection.
 - Grounded document answers with page citations, excerpts, strict source-label
   validation, and abstention when evidence is insufficient.
 - General Chat with bounded persisted history and verified Tavily provenance.
 - Opt-in Deep Research with a typed plan and search, iteration, and time limits.
 - Source-quality notes, conservative numeric conflict detection, structured
-  answer views, SSE streaming, and a private content-free usage dashboard.
+  answer views, SSE streaming, and a persistent private usage dashboard.
+- Responsive React workspace with a collapsible conversation sidebar,
+  paginated Document Library, Usage dashboard, functional preferences,
+  mixed Arabic/English direction handling, Markdown, and KaTeX math.
 
 ## Architecture
 
@@ -81,7 +85,14 @@ and Tavily keys for real provider calls. Automated tests make no paid calls.
    uv run uvicorn src.search_engine.api:app --reload
    ```
 
-5. Start the frontend:
+5. In another terminal, start the durable indexing worker. Uploads are queued;
+   this process performs the quota-bearing Gemini embedding work:
+
+   ```powershell
+   uv run python -m src.search_engine.indexing_worker
+   ```
+
+6. Start the frontend:
 
    ```powershell
    cd frontend
@@ -104,7 +115,7 @@ Open `http://127.0.0.1:5173/`. Vite proxies `/api` and `/chat` to port 8000.
 | Indexing | `RAG_EMBEDDING_*`, `RAG_INDEXING_MAX_CHUNKS` | Model, 1536d vectors, retries |
 | RAG | `RAG_RETRIEVAL_*`, `RAG_ANSWER_*`, `RAG_FULL_CONTEXT_*` | Evidence/model budgets |
 | Research | `GENERAL_CHAT_*`, `RESEARCH_*` | History, planning, search, timeout |
-| Usage | `USAGE_*` | Process-local ceilings and retention |
+| Usage | `USAGE_*` | Process-local safety ceilings; usage events are persistent |
 
 Document embeddings use `RETRIEVAL_DOCUMENT`, query embeddings use
 `RETRIEVAL_QUERY`, and both are L2-normalized. Changing model, dimensions,
@@ -120,13 +131,15 @@ revoke issued stateless JWTs. See `docs/security-review.md`.
 
 ## Document workflow
 
-1. Upload a PDF, DOCX, or TXT document. Upload only parses and stores it.
-2. Inspect its state, then choose **Prepare for AI questions** and confirm. This
-   explicit action invokes embedding work.
+1. Upload one or more PDF, DOCX, or TXT documents. Each valid upload is parsed,
+   stored, and atomically enqueued without blocking the HTTP response.
+2. The separate worker claims jobs with PostgreSQL row locking, reports real
+   stages/chunk counts, and prevents duplicate active jobs. Failed jobs expose
+   a safe Retry action.
 3. Indexing removes verified repeated PDF margin boilerplate, chunks text,
    embeds it, and atomically replaces prior chunks.
-4. Select ready documents in Document Chat, or select none to search all ready
-   documents owned by the current user.
+4. Select ready documents in Document Chat. Selections persist on the
+   conversation and are restored with its messages after reload.
 
 The server streams uploads (100 MiB default), bounds DOCX expansion and chunk
 count, and never returns internal storage paths.
@@ -168,13 +181,17 @@ delta plus citation/status metadata; it does not claim token-level streaming.
 |---|---|---|
 | `POST` | `/api/auth/signup`, `/login`, `/refresh`, `/logout` | Auth lifecycle |
 | `GET` | `/api/auth/me` | Current public profile |
-| `GET` | `/api/conversations/latest` | Restore latest owned chat |
+| `GET/POST` | `/api/conversations` | Paginated search and creation |
+| `GET/PATCH/DELETE` | `/api/conversations/{id}` | Restore, update, or delete |
+| `PUT` | `/api/conversations/{id}/documents` | Persist document selection |
 | `POST` | `/api/documents/upload` | Upload and parse |
-| `GET` | `/api/documents`, `/api/documents/{id}` | Owned document metadata |
+| `GET` | `/api/documents/page`, `/api/documents/{id}` | Paginated owned metadata |
 | `DELETE` | `/api/documents/{id}` | Delete owned document |
-| `POST` | `/api/documents/{id}/index` | Explicit indexing |
+| `POST` | `/api/documents/{id}/index` | Retry/compatibility queue action |
+| `GET` | `/api/documents/{id}/index-job` | Actual indexing progress |
 | `POST` | `/chat`, `/chat/stream` | JSON or SSE chat |
-| `GET` | `/api/metrics` | Private process-local metrics |
+| `GET` | `/api/metrics` | Private persistent metrics |
+| `GET/PUT` | `/api/preferences` | Functional per-user preferences |
 
 Chat bodies contain `query`, `mode`, optional `conversation_id`, document IDs
 only in document mode, and `research_mode` only in general mode.
@@ -189,8 +206,8 @@ only in document mode, and `research_mode` only in general mode.
   `noopener noreferrer` external links.
 - Prompt-injection boundaries, safe provider errors, and validation logs that
   omit submitted values.
-- Manual indexing confirmation and metrics that retain no prompt, answer,
-  document text, token, or user identifier.
+- Durable indexing queue and content-free usage events that retain no prompt,
+  answer, document text, access token, or credential.
 
 These are local defense-in-depth controls, not a production certification.
 
@@ -204,9 +221,10 @@ npm run lint
 npm run build
 ```
 
-Backend tests cover auth, ownership/IDOR, upload/parsing, manual and atomic
+Backend tests cover auth, ownership/IDOR, upload/parsing, queued and atomic
 indexing, embeddings, retrieval metrics, citations, abstention, injection,
-research budgets/failures, structured answers, observability, and security.
+research budgets/failures, conversations, preferences, persistent metrics,
+structured answers, observability, and security.
 Frontend tests cover mode/payload isolation, attachments, SSE metadata, file
 validation, and safe links; lint/build validate the full UI.
 
@@ -218,9 +236,16 @@ English and Arabic cases without committing private content or inventing scores.
 
 - Real Gemini/Tavily quality, quota, and latency checks require manual approval.
 - No private human-labeled benchmark results exist yet.
-- Usage limits are per process; refresh tokens have no durable revocation;
+- Usage safety limits are per process; refresh tokens have no durable revocation;
   browser tokens use localStorage; parsers are not malware-sandboxed.
-- No hybrid retrieval, reranker, HNSW, answer cache, or automatic re-indexing.
+- The usage dashboard polls every three seconds rather than using a dedicated
+  metrics SSE channel. General Gemini token totals are marked estimated when
+  the agent SDK does not expose final provider usage; RAG uses provider metadata.
+- The indexing worker is a separate process and must be supervised in production.
+- Document listing is paginated but not virtualized; UI result sets are bounded
+  to the current page.
+- No hybrid retrieval, reranker, HNSW, answer cache, or silent re-indexing of
+  existing documents after preprocessing/model changes.
 - Structured views are derived locally, avoiding a second paid model call.
 - LangGraph `create_react_agent` and an upstream Google Python type alias emit
   deprecation warnings.

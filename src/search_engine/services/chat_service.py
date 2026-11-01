@@ -23,6 +23,7 @@ from src.search_engine.models.conversation import Conversation
 from src.search_engine.models.message import Message
 from src.search_engine.core.config import settings
 from src.search_engine.repositories.conversation_repository import ConversationRepository
+from src.search_engine.repositories.conversation_document_repository import ConversationDocumentRepository
 from src.search_engine.repositories.message_repository import MessageRepository
 
 _TITLE_MAX_LENGTH = 255
@@ -67,8 +68,10 @@ class ChatService:
     """Conversation use cases scoped to one user."""
 
     def __init__(self, session: AsyncSession) -> None:
+        self._session = session
         self._conversations = ConversationRepository(session)
         self._messages = MessageRepository(session)
+        self._conversation_documents = ConversationDocumentRepository(session)
 
     async def start_user_turn(
         self,
@@ -79,6 +82,8 @@ class ChatService:
         mode: Literal["general", "documents"] = "general",
         document_ids: Sequence[uuid.UUID] = (),
         attachments: Sequence[Mapping[str, Any]] = (),
+        conversation_mode: str | None = None,
+        documents_verified: bool = False,
     ) -> Conversation:
         """Create or load an owned conversation and store the user message."""
         title = title_from_query(query)
@@ -86,6 +91,7 @@ class ChatService:
             conversation = await self._conversations.create(
                 user_id=user_id,
                 title=title,
+                mode=conversation_mode or mode,
             )
         else:
             conversation = await self._conversations.get_by_id_for_user(
@@ -95,6 +101,16 @@ class ChatService:
             if conversation is None:
                 raise ConversationNotFoundError
             await self._conversations.mark_updated(conversation, title=title)
+            if conversation_mode:
+                conversation.mode = conversation_mode
+
+        if mode == "documents" and document_ids:
+            await self._conversation_documents.replace(
+                conversation_id=conversation.id,
+                user_id=user_id,
+                document_ids=document_ids,
+                verify_ownership=not documents_verified,
+            )
 
         await self._messages.create(
             conversation_id=conversation.id,
@@ -108,6 +124,14 @@ class ChatService:
         )
         await self._conversations.mark_updated(conversation)
         return conversation
+
+    async def get_associated_document_ids(
+        self, *, user_id: uuid.UUID, conversation_id: uuid.UUID
+    ) -> list[uuid.UUID]:
+        conversation = await self._conversations.get_by_id_for_user(conversation_id, user_id)
+        if conversation is None:
+            raise ConversationNotFoundError
+        return await self._conversation_documents.list_ids(conversation_id, user_id)
 
     async def add_assistant_message(
         self,
@@ -160,6 +184,67 @@ class ChatService:
         rows = await self._messages.list_for_conversation(latest.id)
         messages = [_decode_message(message) for message in rows]
         return latest, messages
+
+    async def list_conversations(
+        self, *, user_id: uuid.UUID, search: str | None, limit: int, offset: int
+    ) -> tuple[list[Conversation], int]:
+        return await self._conversations.page_for_user(
+            user_id, search=search, limit=limit, offset=offset
+        )
+
+    async def create_conversation(
+        self, *, user_id: uuid.UUID, title: str, mode: str
+    ) -> Conversation:
+        return await self._conversations.create(user_id=user_id, title=title.strip(), mode=mode)
+
+    async def get_conversation(
+        self, *, user_id: uuid.UUID, conversation_id: uuid.UUID,
+        message_limit: int = 100, message_offset: int = 0,
+    ) -> tuple[Conversation, list[PersistedChatMessage], list[uuid.UUID]]:
+        conversation = await self._conversations.get_by_id_for_user(conversation_id, user_id)
+        if conversation is None:
+            raise ConversationNotFoundError
+        rows = await self._messages.page_for_conversation(
+            conversation_id, limit=message_limit, offset=message_offset
+        )
+        return (
+            conversation,
+            [_decode_message(row) for row in rows],
+            await self._conversation_documents.list_ids(conversation_id, user_id),
+        )
+
+    async def update_conversation(
+        self, *, user_id: uuid.UUID, conversation_id: uuid.UUID,
+        title: str | None, mode: str | None,
+    ) -> Conversation:
+        conversation = await self._conversations.get_by_id_for_user(conversation_id, user_id)
+        if conversation is None:
+            raise ConversationNotFoundError
+        if title is not None:
+            conversation.title = title.strip()
+        if mode is not None:
+            conversation.mode = mode
+        await self._conversations.mark_updated(conversation)
+        return conversation
+
+    async def delete_conversation(self, *, user_id: uuid.UUID, conversation_id: uuid.UUID) -> None:
+        if not await self._conversations.delete_for_user(conversation_id, user_id):
+            raise ConversationNotFoundError
+
+    async def replace_conversation_documents(
+        self, *, user_id: uuid.UUID, conversation_id: uuid.UUID,
+        document_ids: Sequence[uuid.UUID],
+    ) -> list[uuid.UUID]:
+        conversation = await self._conversations.get_by_id_for_user(conversation_id, user_id)
+        if conversation is None:
+            raise ConversationNotFoundError
+        try:
+            await self._conversation_documents.replace(
+                conversation_id=conversation_id, user_id=user_id, document_ids=document_ids
+            )
+        except LookupError as exc:
+            raise ConversationNotFoundError from exc
+        return await self._conversation_documents.list_ids(conversation_id, user_id)
 
     async def get_bounded_general_history(
         self,

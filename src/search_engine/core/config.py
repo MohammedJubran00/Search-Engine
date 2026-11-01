@@ -70,8 +70,8 @@ class Settings(BaseSettings):
     rag_answer_temperature: float = 0.0
     rag_answer_timeout_seconds: float = 45.0
     rag_answer_max_retries: int = 2
-    rag_answer_max_output_tokens: int = 1_024
-    rag_answer_max_input_tokens: int = 8_192
+    rag_answer_max_output_tokens: int = 4_096
+    rag_answer_max_input_tokens: int = 16_384
     rag_answer_max_context_tokens: int = 6_000
     rag_answer_token_margin: int = 256
     rag_answer_max_sources: int = 8
@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     rag_full_context_max_chunks: int = 64
     general_chat_history_max_messages: int = 12
     general_chat_history_max_characters: int = 12_000
+    general_chat_model: str = "gemini-3.5-flash-lite"
+    general_chat_max_output_tokens: int = 4_096
     research_max_subquestions: int = 4
     research_standard_max_searches: int = 2
     research_deep_max_searches: int = 6

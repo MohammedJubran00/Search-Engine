@@ -37,6 +37,7 @@ from src.search_engine.database.database import get_db
 from src.search_engine.deps import get_current_user, get_usage_request
 from src.search_engine.document_router import router as document_router
 from src.search_engine.metrics_router import router as metrics_router
+from src.search_engine.preferences_router import router as preferences_router
 from src.search_engine.main import app as graph_app  # عشان ما نخلطه مع: app = FastAPI() ( لا نستخدم نفس الاسم)
 from src.search_engine.main import AgentStreamMetadata, stream_agent
 from src.search_engine.models.user import User
@@ -51,6 +52,7 @@ from src.search_engine.rag.generation import RagGenerationError
 from src.search_engine.research.presentation import derive_answer_presentation
 from src.search_engine.services.rag_answer_service import RagAnswerService
 from src.search_engine.services.observability_service import UsageRecord
+from src.search_engine.repositories.usage_repository import UsageRepository
 from src.search_engine.services.retrieval_service import (
     RetrievalDocumentAccessError,
     RetrievalDocumentUnavailableError,
@@ -64,7 +66,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
@@ -76,6 +78,7 @@ app.include_router(
 )
 app.include_router(document_router, prefix="/api/documents", tags=["documents"])
 app.include_router(metrics_router, prefix="/api/metrics", tags=["metrics"])
+app.include_router(preferences_router, prefix="/api/preferences", tags=["preferences"])
 
 
 def error_response(status_code: int, message: str) -> JSONResponse:
@@ -240,11 +243,15 @@ async def answer_document_turn(
     conversation_id: uuid.UUID,
     query: str,
     document_ids: list[uuid.UUID],
+    response_depth: str = "auto",
+    response_language: str = "auto",
 ) -> RagAnswerResult:
     result = await RagAnswerService(db).answer(
         user_id=user_id,
         question=query,
         document_ids=document_ids or None,
+        response_depth=response_depth,
+        response_language=response_language,
     )
     presentation = derive_answer_presentation(result.answer).model_dump()
     await service.add_assistant_message(
@@ -313,6 +320,18 @@ async def chat(
         return error_response(400, _EMPTY_QUERY)
 
     service = ChatService(db)
+    effective_document_ids = list(request.document_ids)
+    if (
+        request.mode == "documents"
+        and not effective_document_ids
+        and request.conversation_id is not None
+    ):
+        try:
+            effective_document_ids = await service.get_associated_document_ids(
+                user_id=user.id, conversation_id=request.conversation_id
+            )
+        except ConversationNotFoundError:
+            return error_response(404, _CONVERSATION_NOT_FOUND)
     general_history: list[tuple[str, str]] = []
     if request.mode == "general" and request.conversation_id is not None:
         try:
@@ -326,7 +345,7 @@ async def chat(
         attachments = await resolve_chat_attachments(
             db=db,
             user_id=user.id,
-            document_ids=request.document_ids if request.mode == "documents" else [],
+            document_ids=effective_document_ids if request.mode == "documents" else [],
         )
     except (RetrievalDocumentAccessError, RetrievalDocumentUnavailableError) as exc:
         return document_error_response(exc)
@@ -336,11 +355,17 @@ async def chat(
             conversation_id=request.conversation_id,
             query=query,
             mode=request.mode,
-            document_ids=request.document_ids,
+            document_ids=effective_document_ids,
             attachments=attachments,
+            conversation_mode=(
+                "documents" if request.mode == "documents"
+                else "deep" if request.research_mode == "deep" else "general"
+            ),
+            documents_verified=True,
         )
     except ConversationNotFoundError:
         return error_response(404, _CONVERSATION_NOT_FOUND)
+    usage.conversation_id = conversation.id
 
     if request.mode == "documents":
         # Persist the user turn before RAG releases its read transaction.
@@ -352,7 +377,9 @@ async def chat(
                 user_id=user.id,
                 conversation_id=conversation.id,
                 query=query,
-                document_ids=request.document_ids,
+                document_ids=effective_document_ids,
+                response_depth=request.response_depth,
+                response_language=request.response_language,
             )
         except (RetrievalError, RagGenerationError) as exc:
             usage.mark_error(quota="quota" in str(exc).lower())
@@ -363,6 +390,14 @@ async def chat(
             )
             return document_error_response(exc)
         record_rag_usage(usage, result)
+        await UsageRepository(db).add(
+            request_id=usage.request_id, user_id=user.id,
+            conversation_id=conversation.id, provider="gemini",
+            operation="generation", status="success", model=settings.rag_answer_model,
+            input_tokens=result.usage.get("input_tokens"),
+            output_tokens=result.usage.get("output_tokens"),
+            latency_ms=round(float(result.generation_seconds or 0) * 1000),
+        )
         return ChatResponse(
             answer=result.answer,
             conversation_id=conversation.id,
@@ -382,6 +417,8 @@ async def chat(
                 "query": query,
                 "history": general_history,
                 "research_mode": request.research_mode,
+                "response_depth": request.response_depth,
+                "response_language": request.response_language,
             },
         )
         result = (
@@ -440,6 +477,21 @@ async def chat(
         plan=research_plan,
         summary=research_summary,
     )
+    usage_repo = UsageRepository(db)
+    await usage_repo.add(
+        request_id=usage.request_id, user_id=user.id,
+        conversation_id=conversation.id, provider="gemini", operation="generation",
+        status="success", model=settings.general_chat_model,
+        request_count=2 if request.research_mode == "deep" else 1,
+        estimated=True,
+    )
+    if research_summary and research_summary.get("search_count"):
+        await usage_repo.add(
+            request_id=usage.request_id, user_id=user.id,
+            conversation_id=conversation.id, provider="tavily", operation="search",
+            status="success", request_count=int(research_summary["search_count"]),
+            latency_ms=round(float(research_summary.get("tavily_seconds", 0)) * 1000),
+        )
     evidence_conflicts = [
         item
         for item in (
@@ -493,6 +545,18 @@ async def chat_stream(
         return error_response(400, _EMPTY_QUERY)
 
     service = ChatService(db)
+    effective_document_ids = list(request.document_ids)
+    if (
+        request.mode == "documents"
+        and not effective_document_ids
+        and request.conversation_id is not None
+    ):
+        try:
+            effective_document_ids = await service.get_associated_document_ids(
+                user_id=user.id, conversation_id=request.conversation_id
+            )
+        except ConversationNotFoundError:
+            return error_response(404, _CONVERSATION_NOT_FOUND)
     general_history: list[tuple[str, str]] = []
     if request.mode == "general" and request.conversation_id is not None:
         try:
@@ -506,7 +570,7 @@ async def chat_stream(
         attachments = await resolve_chat_attachments(
             db=db,
             user_id=user.id,
-            document_ids=request.document_ids if request.mode == "documents" else [],
+            document_ids=effective_document_ids if request.mode == "documents" else [],
         )
     except (RetrievalDocumentAccessError, RetrievalDocumentUnavailableError) as exc:
         return document_error_response(exc)
@@ -516,11 +580,17 @@ async def chat_stream(
             conversation_id=request.conversation_id,
             query=query,
             mode=request.mode,
-            document_ids=request.document_ids,
+            document_ids=effective_document_ids,
             attachments=attachments,
+            conversation_mode=(
+                "documents" if request.mode == "documents"
+                else "deep" if request.research_mode == "deep" else "general"
+            ),
+            documents_verified=True,
         )
     except ConversationNotFoundError:
         return error_response(404, _CONVERSATION_NOT_FOUND)
+    usage.conversation_id = conversation.id
 
     conversation_id = conversation.id
     user_id = user.id
@@ -538,9 +608,19 @@ async def chat_stream(
                     user_id=user_id,
                     conversation_id=conversation_id,
                     query=query,
-                    document_ids=request.document_ids,
+                    document_ids=effective_document_ids,
+                    response_depth=request.response_depth,
+                    response_language=request.response_language,
                 )
                 record_rag_usage(usage, result)
+                await UsageRepository(db).add(
+                    request_id=usage.request_id, user_id=user_id,
+                    conversation_id=conversation_id, provider="gemini",
+                    operation="generation", status="success", model=settings.rag_answer_model,
+                    input_tokens=result.usage.get("input_tokens"),
+                    output_tokens=result.usage.get("output_tokens"),
+                    latency_ms=round(float(result.generation_seconds or 0) * 1000),
+                )
                 citations = [citation_payload(source) for source in result.citations]
                 presentation = derive_answer_presentation(result.answer).model_dump()
                 # One honest completed-answer delta preserves old SSE clients. It is
@@ -593,6 +673,8 @@ async def chat_stream(
                 query,
                 history=general_history,
                 research_mode=request.research_mode,
+                response_depth=request.response_depth,
+                response_language=request.response_language,
             )
             yielded = False
             answer = ""
@@ -651,6 +733,23 @@ async def chat_stream(
                     plan=research_plan,
                     summary=research_summary,
                 )
+                usage_repo = UsageRepository(db)
+                await usage_repo.add(
+                    request_id=usage.request_id, user_id=user_id,
+                    conversation_id=conversation_id, provider="gemini",
+                    operation="generation", status="success",
+                    model=settings.general_chat_model,
+                    request_count=2 if request.research_mode == "deep" else 1,
+                    estimated=True,
+                )
+                if research_summary and research_summary.get("search_count"):
+                    await usage_repo.add(
+                        request_id=usage.request_id, user_id=user_id,
+                        conversation_id=conversation_id, provider="tavily",
+                        operation="search", status="success",
+                        request_count=int(research_summary["search_count"]),
+                        latency_ms=round(float(research_summary.get("tavily_seconds", 0)) * 1000),
+                    )
                 presentation = derive_answer_presentation(answer).model_dump()
                 await service.add_assistant_message(
                     user_id=user_id,

@@ -1,7 +1,7 @@
 """Authenticated chat persistence. Gemini/LangGraph are mocked."""
 
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -220,7 +220,7 @@ def test_unknown_conversation_is_not_found(mock_invoke, client: TestClient) -> N
 
 @patch(
     "src.search_engine.api.stream_agent",
-    side_effect=lambda session_id, query, history=None, research_mode="standard": iter(["Hel", "lo"]),
+        side_effect=lambda session_id, query, history=None, research_mode="standard", **kwargs: iter(["Hel", "lo"]),
 )
 def test_stream_persists_assistant_answer(mock_stream, client: TestClient) -> None:
     headers = auth_headers(client)
@@ -352,10 +352,21 @@ def test_document_chat_uses_rag_once_and_persists_attribution(
     mock_answer: AsyncMock,
     mock_attachments: AsyncMock,
     client: TestClient,
+    tmp_path,
+    monkeypatch,
 ) -> None:
     mock_answer.return_value = _rag_result()
+    from src.search_engine.core.config import settings
+
+    monkeypatch.setattr(settings, "rag_storage_dir", tmp_path)
     headers = auth_headers(client)
-    document_id = uuid4()
+    upload = client.post(
+        "/api/documents/upload",
+        headers=headers,
+        files={"file": ("project.txt", b"Project goals and scope", "text/plain")},
+    )
+    assert upload.status_code == 201
+    document_id = UUID(upload.json()["id"])
     mock_attachments.return_value = [
         {
             "document_id": str(document_id),

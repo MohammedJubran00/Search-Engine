@@ -9,7 +9,7 @@ test('general chat never carries document context', () => {
       mode: 'general',
       documentIds: ['private-document'],
     }),
-    { query: 'hello', mode: 'general', research_mode: 'standard' },
+    { query: 'hello', mode: 'general', research_mode: 'standard', response_depth: 'auto', response_language: 'auto' },
   )
 })
 
@@ -19,12 +19,16 @@ test('document chat sends a deduplicated explicit selection', () => {
       conversationId: 'conversation',
       mode: 'documents',
       research_mode: 'standard',
+      response_depth: 'auto',
+      response_language: 'auto',
       documentIds: ['one', 'one', 'two'],
     }),
     {
       query: 'summarize',
       mode: 'documents',
       research_mode: 'standard',
+      response_depth: 'auto',
+      response_language: 'auto',
       conversation_id: 'conversation',
       document_ids: ['one', 'two'],
     },

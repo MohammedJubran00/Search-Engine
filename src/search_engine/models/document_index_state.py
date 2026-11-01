@@ -26,7 +26,7 @@ from src.search_engine.database.database import Base
 if TYPE_CHECKING:
     from src.search_engine.models.document import Document
 
-DOCUMENT_INDEXING_STATUSES = ("not_indexed", "processing", "completed", "failed")
+DOCUMENT_INDEXING_STATUSES = ("not_indexed", "queued", "processing", "completed", "failed")
 
 
 class DocumentIndexState(Base):
@@ -35,7 +35,7 @@ class DocumentIndexState(Base):
     __tablename__ = "document_index_states"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('not_indexed', 'processing', 'completed', 'failed')",
+            "status IN ('not_indexed', 'queued', 'processing', 'completed', 'failed')",
             name="ck_document_index_states_status",
         ),
         CheckConstraint(

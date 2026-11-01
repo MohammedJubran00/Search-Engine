@@ -1,0 +1,703 @@
+# Local benchmark report
+
+Mode: local socket HTTP, mocked external providers
+
+Small smoke dataset; not a capacity claim. Includes application and database on one host, with real socket HTTP and mocked external providers.
+
+| Measurement | Requests | P50 ms | P95 ms | Errors |
+|---|---:|---:|---:|---:|
+| GET /api/auth/me concurrency=1 | 10 | 5.476 | 5.824 | 0 |
+| GET /api/auth/me concurrency=5 | 10 | 18.124 | 157.266 | 0 |
+| GET /api/auth/me concurrency=10 | 10 | 140.564 | 233.489 | 0 |
+| GET /api/documents concurrency=1 | 10 | 9.329 | 11.076 | 0 |
+| GET /api/documents concurrency=5 | 10 | 35.490 | 45.585 | 0 |
+| GET /api/documents concurrency=10 | 10 | 60.883 | 188.440 | 0 |
+| GET /api/conversations concurrency=1 | 10 | 7.530 | 8.351 | 0 |
+| GET /api/conversations concurrency=5 | 10 | 29.353 | 38.856 | 0 |
+| GET /api/conversations concurrency=10 | 10 | 51.483 | 92.402 | 0 |
+| POST /chat concurrency=1 | 10 | 17.122 | 18.112 | 0 |
+
+## Complete measurements and skipped sections
+
+```json
+{
+  "mode": "local socket HTTP, mocked external providers",
+  "configuration": {
+    "requests": 10,
+    "warmup": 2,
+    "concurrency": [
+      1,
+      5,
+      10
+    ],
+    "output": "benchmarks\\reports"
+  },
+  "recorded_at": "2026-11-01T21:50:18.460383+00:00",
+  "dependencies": {
+    "fastapi": "0.141.1",
+    "uvicorn": "0.52.4",
+    "sqlalchemy": "2.0.52",
+    "asyncpg": "0.31.0",
+    "pgvector": "0.5.1",
+    "httpx": "0.28.1"
+  },
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.6",
+    "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+    "logical_cpu_count": 16
+  },
+  "results": {
+    "upload_validation_parse_seconds": 0.08952429999771994,
+    "GET /api/auth/me concurrency=1": {
+      "requests": 10,
+      "successful": 10,
+      "errors": 0,
+      "success_rate": 1.0,
+      "error_rate": 0.0,
+      "average_ms": 5.330099999991944,
+      "p50_ms": 5.476049998833332,
+      "p95_ms": 5.824460001531406,
+      "p99_ms": 5.93937199904758,
+      "requests_per_second": 182.7522117620211,
+      "bytes_per_second": 45505.30072874325,
+      "timeouts": 0
+    },
+    "GET /api/auth/me concurrency=5": {
+      "requests": 10,
+      "successful": 10,
+      "errors": 0,
+      "success_rate": 1.0,
+      "error_rate": 0.0,
+      "average_ms": 57.27767999851494,
+      "p50_ms": 18.12354999856325,
+      "p95_ms": 157.26612499856856,
+      "p99_ms": 157.51794499868993,
+      "requests_per_second": 61.794690845536785,
+      "bytes_per_second": 15386.87802053866,
+      "timeouts": 0
+    },
+    "GET /api/auth/me concurrency=10": {
+      "requests": 10,
+      "successful": 10,
+      "errors": 0,
+      "success_rate": 1.0,
+      "error_rate": 0.0,
+      "average_ms": 139.86784999942756,
+      "p50_ms": 140.564400000585,
+      "p95_ms": 233.48902000034286,
+      "p99_ms": 233.66268399993714,
+      "requests_per_second": 40.832476191662856,
+      "bytes_per_second": 10167.286571724051,
+      "timeouts": 0
+    },
+    "GET /api/documents concurrency=1": {
+      "requests": 10,
+      "successful": 10,
+      "errors": 0,
+      "success_rate": 1.0,
+      "error_rate": 0.0,
+      "average_ms": 9.468190001643961,
+      "p50_ms": 9.328900003310991,
+      "p95_ms": 11.075520002123085,
+      "p99_ms": 11.110224001822644,
+      "requests_per_second": 104.43624271533908,
+      "bytes_per_second": 28511.09426128757,
+      "timeouts": 0
+    },
+    "GET /api/documents concurrency=5": {
+      "requests": 10,
+      "successful": 10,
+      "errors": 0,
+      "success_rate": 1.0,
+      "error_rate": 0.0,
+      "average_ms": 35.274260002188385,
+      "p50_ms": 35.49005000240868,
+      "p95_ms": 45.58547500273563,
+      "p99_ms": 47.87021500218543,
+      "requests_per_second": 125.26148334112214,
+      "bytes_per_second": 34196.38495212635,
+      "timeouts": 0
+    },
+    "GET /api/documents concurrency=10": {
+      "requests": 10,
+      "successful": 10,
+      "errors": 0,
+      "success_rate": 1.0,
+      "error_rate": 0.0,
+      "average_ms": 99.63328999947407,
+      "p50_ms": 60.88339999769232,
+      "p95_ms": 188.43954999974815,
+      "p99_ms": 202.5591099994199,
+      "requests_per_second": 46.387331433570935,
+      "bytes_per_second": 12663.741481364865,
+      "timeouts": 0
+    },
+    "GET /api/conversations concurrency=1": {
+      "requests": 10,
+      "successful": 10,
+      "errors": 0,
+      "success_rate": 1.0,
+      "error_rate": 0.0,
+      "average_ms": 7.208949998312164,
+      "p50_ms": 7.529799997428199,
+      "p95_ms": 8.351144996777293,
+      "p99_ms": 8.376308997176238,
+      "requests_per_second": 136.93902926774854,
+      "bytes_per_second": 6025.317287780936,
+      "timeouts": 0
+    },
+    "GET /api/conversations concurrency=5": {
+      "requests": 10,
+      "successful": 10,
+      "errors": 0,
+      "success_rate": 1.0,
+      "error_rate": 0.0,
+      "average_ms": 29.847750001499662,
+      "p50_ms": 29.35340000112774,
+      "p95_ms": 38.85563000330876,
+      "p99_ms": 40.647926001329324,
+      "requests_per_second": 148.55772729031563,
+      "bytes_per_second": 6536.540000773887,
+      "timeouts": 0
+    },
+    "GET /api/conversations concurrency=10": {
+      "requests": 10,
+      "successful": 10,
+      "errors": 0,
+      "success_rate": 1.0,
+      "error_rate": 0.0,
+      "average_ms": 52.926520001346944,
+      "p50_ms": 51.482600003510015,
+      "p95_ms": 92.40219000166694,
+      "p99_ms": 112.75795800080232,
+      "requests_per_second": 78.11255081251099,
+      "bytes_per_second": 3436.9522357504834,
+      "timeouts": 0
+    },
+    "SSE standard": {
+      "summary": {
+        "requests": 10,
+        "successful": 10,
+        "errors": 0,
+        "success_rate": 1.0,
+        "error_rate": 0.0,
+        "average_ms": 22.028239999053767,
+        "p50_ms": 21.223150000878377,
+        "p95_ms": 25.6812550000177,
+        "p99_ms": 25.80297100219468,
+        "requests_per_second": 45.396273149509696,
+        "bytes_per_second": 0.0,
+        "timeouts": 0
+      },
+      "samples": [
+        {
+          "seconds": 0.025495299996691756,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.014897599998221267,
+          "ttft_seconds": 0.015395999995234888,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.025833400002738927,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.015087699997820891,
+          "ttft_seconds": 0.015441900002770126,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.02437140000256477,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.014745699998456985,
+          "ttft_seconds": 0.014971099997637793,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.020368500001495704,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.012747100001433864,
+          "ttft_seconds": 0.013091300002997741,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.01958139999624109,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.011455599997134414,
+          "ttft_seconds": 0.011733300001651514,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.0219130999976187,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.012514200003352016,
+          "ttft_seconds": 0.012984599998162594,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.02017379999597324,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.010513200002606027,
+          "ttft_seconds": 0.010825099998328369,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.02009919999545673,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.011718399997334927,
+          "ttft_seconds": 0.011971100000664592,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.02060229999915464,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.011786600000050385,
+          "ttft_seconds": 0.012122899999667425,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.021844000002602115,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.012710700000752695,
+          "ttft_seconds": 0.01315259999682894,
+          "interrupted": false
+        }
+      ],
+      "content_latency": {
+        "requests": 10,
+        "successful": 10,
+        "errors": 0,
+        "success_rate": 1.0,
+        "error_rate": 0.0,
+        "average_ms": 13.168989999394398,
+        "p50_ms": 13.037950000580167,
+        "p95_ms": 15.421244999379269,
+        "p99_ms": 15.437769002091954,
+        "timeouts": 0
+      },
+      "completion_rate": 1.0
+    },
+    "SSE deep": {
+      "summary": {
+        "requests": 10,
+        "successful": 10,
+        "errors": 0,
+        "success_rate": 1.0,
+        "error_rate": 0.0,
+        "average_ms": 20.492940000258386,
+        "p50_ms": 20.4682000039611,
+        "p95_ms": 21.779500003322028,
+        "p99_ms": 21.98182000371162,
+        "requests_per_second": 48.797293115940974,
+        "bytes_per_second": 0.0,
+        "timeouts": 0
+      },
+      "samples": [
+        {
+          "seconds": 0.020404200004122686,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.011729900004866067,
+          "ttft_seconds": 0.01191580000158865,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.020583899997291155,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.012805200000002515,
+          "ttft_seconds": 0.013340600002266001,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.01910440000210656,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.011291499999060761,
+          "ttft_seconds": 0.011554800003068522,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.020057099995028693,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.01176869999471819,
+          "ttft_seconds": 0.011996999994153157,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.022032400003809016,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.011669800005620345,
+          "ttft_seconds": 0.011870100002852269,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.020276199997169897,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.011536400001205038,
+          "ttft_seconds": 0.01185760000225855,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.02082259999588132,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.011576199998671655,
+          "ttft_seconds": 0.011970499996095896,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.020532200003799517,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.011381200005416758,
+          "ttft_seconds": 0.0117924000005587,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.0196460000006482,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.011305400003038812,
+          "ttft_seconds": 0.011713300002156757,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.02147040000272682,
+          "ok": true,
+          "chunks": 2,
+          "first_event_seconds": 0.01387070000055246,
+          "ttft_seconds": 0.013907599997764919,
+          "interrupted": false
+        }
+      ],
+      "content_latency": {
+        "requests": 10,
+        "successful": 10,
+        "errors": 0,
+        "success_rate": 1.0,
+        "error_rate": 0.0,
+        "average_ms": 12.191970000276342,
+        "p50_ms": 11.89295000222046,
+        "p95_ms": 13.652449999790406,
+        "p99_ms": 13.856569998170016,
+        "timeouts": 0
+      },
+      "completion_rate": 1.0
+    },
+    "POST /chat concurrency=1": {
+      "requests": 10,
+      "successful": 10,
+      "errors": 0,
+      "success_rate": 1.0,
+      "error_rate": 0.0,
+      "average_ms": 17.20431999929133,
+      "p50_ms": 17.12229999975534,
+      "p95_ms": 18.111924996992457,
+      "p99_ms": 18.205344998496003,
+      "requests_per_second": 58.09623292411167,
+      "bytes_per_second": 17370.77364430939,
+      "timeouts": 0
+    },
+    "database": {
+      "indexing": {
+        "seconds": 0.03843649999907939,
+        "chunk_count": 5,
+        "chunks_per_second": 130.08468513313537,
+        "parse_extract_chunk_seconds": 0.0022775999968871474,
+        "embedding_seconds": 7.410000398522243e-05,
+        "persistence_seconds": 0.026493800003663637,
+        "file_type": "TXT",
+        "file_bytes": 3900,
+        "provider": "deterministic mock"
+      },
+      "retrieval": {
+        "summary": {
+          "requests": 10,
+          "successful": 10,
+          "errors": 0,
+          "success_rate": 1.0,
+          "error_rate": 0.0,
+          "average_ms": 8.923479999793926,
+          "p50_ms": 6.905849997565383,
+          "p95_ms": 19.086290002087495,
+          "p99_ms": 25.006778002061765,
+          "requests_per_second": 112.06390332281727,
+          "bytes_per_second": 0.0,
+          "timeouts": 0
+        },
+        "samples": [
+          {
+            "seconds": 0.026486900002055336,
+            "ok": true,
+            "chunks": 5
+          },
+          {
+            "seconds": 0.006885999995574821,
+            "ok": true,
+            "chunks": 5
+          },
+          {
+            "seconds": 0.007880500001192559,
+            "ok": true,
+            "chunks": 5
+          },
+          {
+            "seconds": 0.006925699999555945,
+            "ok": true,
+            "chunks": 5
+          },
+          {
+            "seconds": 0.0058391000056872144,
+            "ok": true,
+            "chunks": 5
+          },
+          {
+            "seconds": 0.007429799996316433,
+            "ok": true,
+            "chunks": 5
+          },
+          {
+            "seconds": 0.006116299999121111,
+            "ok": true,
+            "chunks": 5
+          },
+          {
+            "seconds": 0.005841199999849778,
+            "ok": true,
+            "chunks": 5
+          },
+          {
+            "seconds": 0.005788199996459298,
+            "ok": true,
+            "chunks": 5
+          },
+          {
+            "seconds": 0.010041100002126768,
+            "ok": true,
+            "chunks": 5
+          }
+        ],
+        "query_embedding_seconds": [
+          2.8100002964492887e-05,
+          3.360000118846074e-05,
+          3.199999628122896e-05,
+          4.7299996367655694e-05,
+          2.6900001103058457e-05,
+          3.880000440403819e-05,
+          6.260000373004004e-05,
+          3.2500000088475645e-05,
+          3.060000017285347e-05,
+          4.050000279676169e-05
+        ],
+        "vector_search_seconds": [
+          0.016132699995068833,
+          0.003125999995972961,
+          0.0022146000046632253,
+          0.0028871000031358562,
+          0.002025499998126179,
+          0.0026379999981145374,
+          0.003215900003851857,
+          0.0025767999977688305,
+          0.0022224999993341044,
+          0.007417599998007063
+        ],
+        "top_k": 5,
+        "dimensions": 1536,
+        "documents": 1,
+        "database_version": "18.3",
+        "indexes": [
+          "CREATE UNIQUE INDEX document_chunks_pkey ON public.document_chunks USING btree (id)",
+          "CREATE UNIQUE INDEX uq_document_chunks_document_id_chunk_index ON public.document_chunks USING btree (document_id, chunk_index)"
+        ],
+        "explain_scope": "document filter plus exact vector ranking plan",
+        "explain": [
+          "Index Scan using uq_document_chunks_document_id_chunk_index on document_chunks  (cost=0.14..8.16 rows=1 width=16) (actual time=0.012..0.013 rows=5.00 loops=1)",
+          "  Index Cond: (document_id = '<benchmark-id>'::uuid)",
+          "  Index Searches: 1",
+          "  Buffers: shared hit=2",
+          "Planning Time: 0.058 ms",
+          "Execution Time: 0.022 ms"
+        ],
+        "vector_explain": [
+          "Limit  (cost=10.92..10.93 rows=1 width=44) (actual time=0.096..0.097 rows=5.00 loops=1)",
+          "  Buffers: shared hit=22",
+          "  ->  Sort  (cost=10.92..10.93 rows=1 width=44) (actual time=0.095..0.096 rows=5.00 loops=1)",
+          "        Sort Key: ((c.embedding <=> '<synthetic vector>'::vector)), c.chunk_index, c.id",
+          "        Sort Method: quicksort  Memory: 25kB",
+          "        Buffers: shared hit=22",
+          "        ->  Nested Loop  (cost=0.14..10.91 rows=1 width=44) (actual time=0.041..0.084 rows=5.00 loops=1)",
+          "              Buffers: shared hit=22",
+          "              ->  Nested Loop  (cost=0.14..9.53 rows=1 width=70) (actual time=0.021..0.035 rows=5.00 loops=1)",
+          "                    Buffers: shared hit=7",
+          "                    ->  Index Scan using uq_document_chunks_document_id_chunk_index on document_chunks c  (cost=0.14..8.16 rows=1 width=54) (actual time=0.009..0.010 rows=5.00 loops=1)",
+          "                          Index Cond: (document_id = '<benchmark-id>'::uuid)",
+          "                          Filter: (embedding IS NOT NULL)",
+          "                          Index Searches: 1",
+          "                          Buffers: shared hit=2",
+          "                    ->  Seq Scan on documents d  (cost=0.00..1.36 rows=1 width=16) (actual time=0.003..0.003 rows=1.00 loops=5)",
+          "                          Filter: ((id = '<benchmark-id>'::uuid) AND (user_id = '<benchmark-id>'::uuid))",
+          "                          Rows Removed by Filter: 26",
+          "                          Buffers: shared hit=5",
+          "              ->  Seq Scan on document_index_states s  (cost=0.00..1.38 rows=1 width=16) (actual time=0.002..0.002 rows=1.00 loops=5)",
+          "                    Filter: ((document_id = '<benchmark-id>'::uuid) AND ((status)::text = 'completed'::text))",
+          "                    Rows Removed by Filter: 25",
+          "                    Buffers: shared hit=5",
+          "Planning Time: 0.196 ms",
+          "Execution Time: 0.119 ms"
+        ]
+      }
+    },
+    "SSE documents": {
+      "summary": {
+        "requests": 10,
+        "successful": 10,
+        "errors": 0,
+        "success_rate": 1.0,
+        "error_rate": 0.0,
+        "average_ms": 109.053010000207,
+        "p50_ms": 92.58804999990389,
+        "p95_ms": 173.66725499960012,
+        "p99_ms": 174.09857099919464,
+        "requests_per_second": 9.169852349771014,
+        "bytes_per_second": 0.0,
+        "timeouts": 0
+      },
+      "samples": [
+        {
+          "seconds": 0.17420639999909326,
+          "ok": true,
+          "chunks": 1,
+          "first_event_seconds": 0.16096860000106972,
+          "ttft_seconds": 0.17287780000333441,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.1730083000002196,
+          "ok": true,
+          "chunks": 1,
+          "first_event_seconds": 0.16026560000318568,
+          "ttft_seconds": 0.17125469999882625,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.10156540000025416,
+          "ok": true,
+          "chunks": 1,
+          "first_event_seconds": 0.08474350000324193,
+          "ttft_seconds": 0.09986890000436688,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.08986709999589948,
+          "ok": true,
+          "chunks": 1,
+          "first_event_seconds": 0.0775251999948523,
+          "ttft_seconds": 0.08887369999865768,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.0930341999992379,
+          "ok": true,
+          "chunks": 1,
+          "first_event_seconds": 0.07997549999709008,
+          "ttft_seconds": 0.09189519999927143,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.09214190000056988,
+          "ok": true,
+          "chunks": 1,
+          "first_event_seconds": 0.07875120000244351,
+          "ttft_seconds": 0.09048600000096485,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.08951050000177929,
+          "ok": true,
+          "chunks": 1,
+          "first_event_seconds": 0.07564420000562677,
+          "ttft_seconds": 0.08726230000320356,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.09330320000299253,
+          "ok": true,
+          "chunks": 1,
+          "first_event_seconds": 0.07792709999921499,
+          "ttft_seconds": 0.0911028000045917,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.09178370000154246,
+          "ok": true,
+          "chunks": 1,
+          "first_event_seconds": 0.07893260000128066,
+          "ttft_seconds": 0.09006339999905322,
+          "interrupted": false
+        },
+        {
+          "seconds": 0.0921094000004814,
+          "ok": true,
+          "chunks": 1,
+          "first_event_seconds": 0.07997510000132024,
+          "ttft_seconds": 0.09022310000000289,
+          "interrupted": false
+        }
+      ],
+      "caveat": "Completed-answer delta; not native model token streaming",
+      "content_latency": {
+        "requests": 10,
+        "successful": 10,
+        "errors": 0,
+        "success_rate": 1.0,
+        "error_rate": 0.0,
+        "average_ms": 107.39079000122729,
+        "p50_ms": 90.79440000277827,
+        "p95_ms": 172.14740500130574,
+        "p99_ms": 172.73172100292868,
+        "timeouts": 0
+      },
+      "completion_rate": 1.0
+    }
+  },
+  "skipped": {
+    "real_providers": "Not enabled; no paid calls authorized by this run.",
+    "retrieval_quality": "No manually verified corpus labels supplied. Synthetic vectors are not a quality evaluation.",
+    "ann_comparison": "No ANN implementation or measured before/after baseline.",
+    "gpu": "Remote Gemini has no measurable local GPU usage.",
+    "agent_execution": "Mock agent; no real LangGraph/model timing claim.",
+    "indexing_stages": "Parse/extract/chunk measured together; persistence excludes final commit. Upload validation and parsing measured by HTTP upload duration.",
+    "stream_interrupts": "Natural failures tracked; forced cancellation scenario not executed.",
+    "resources": "Working set and lifetime peak measured on Windows; excludes PostgreSQL. GPU unavailable."
+  },
+  "resources": {
+    "scope": "application and benchmark harness share this process; PostgreSQL excluded",
+    "duration_seconds": 6.380625700003293,
+    "cpu_seconds": 5.578125,
+    "average_single_core_cpu_percent": 87.42285258947443,
+    "memory": {
+      "working_set_bytes": 209244160,
+      "peak_process_lifetime_working_set_bytes": 213118976
+    }
+  }
+}
+```
+
+## Verified Resume Metrics
+
+Measured local mocked-embedding retrieval pipeline P95 of 19.086 ms across 10 queries over one synthetic document and 5 chunks. This is a smoke measurement, not real semantic-provider performance.
+
+No real-provider speed, retrieval quality, production capacity, or improvement claims are supported.

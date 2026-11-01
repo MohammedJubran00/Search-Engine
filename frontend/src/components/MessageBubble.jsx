@@ -86,7 +86,7 @@ export default function MessageBubble({ message }) {
       <div className="message__body" dir={direction}>
         {isUser || message.isError ? (
           <p className="message__plain">{message.content}</p>
-        ) : message.presentation?.type && message.presentation.type !== 'standard' ? (
+        ) : !message.content && message.presentation?.type && message.presentation.type !== 'standard' ? (
           <StructuredAnswer presentation={message.presentation} />
         ) : (
           <div className="message__markdown">

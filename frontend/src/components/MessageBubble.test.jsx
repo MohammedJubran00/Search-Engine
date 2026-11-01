@@ -19,3 +19,46 @@ it('renders mixed Arabic content RTL while preserving Markdown math', () => {
   expect(container.querySelector('.message__body')?.getAttribute('dir')).toBe('rtl')
   expect(container.querySelector('.katex')).not.toBeNull()
 })
+
+it('preserves the complete answer when final metadata includes a structured presentation', () => {
+  const content = [
+    'This introduction must remain visible after streaming finishes.',
+    '',
+    '1. First recommendation',
+    '2. Second recommendation',
+    '',
+    'This conclusion is also part of the answer.',
+  ].join('\n')
+  const { getByText, queryByRole } = render(<MessageBubble message={{
+    role: 'assistant',
+    content,
+    presentation: {
+      type: 'steps',
+      headers: [],
+      rows: [],
+      items: [
+        { label: '1', text: 'First recommendation' },
+        { label: '2', text: 'Second recommendation' },
+      ],
+    },
+  }} />)
+
+  expect(getByText('This introduction must remain visible after streaming finishes.')).not.toBeNull()
+  expect(getByText('This conclusion is also part of the answer.')).not.toBeNull()
+  expect(queryByRole('list', { name: 'Steps' })).toBeNull()
+})
+
+it('uses structured presentation as a fallback when no answer text exists', () => {
+  const { getByRole } = render(<MessageBubble message={{
+    role: 'assistant',
+    content: '',
+    presentation: {
+      type: 'steps',
+      headers: [],
+      rows: [],
+      items: [{ label: '1', text: 'Fallback step' }],
+    },
+  }} />)
+
+  expect(getByRole('list', { name: 'Steps' })).not.toBeNull()
+})

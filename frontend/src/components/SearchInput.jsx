@@ -82,7 +82,9 @@ export default function SearchInput({
       onDocumentUpsert(uploaded)
       onAttachDocument(uploaded.id)
       setPendingFiles((current) => current.filter((entry) => entry.key !== item.key))
-      setComposerStatus('Document uploaded. Automatic indexing is queued.')
+      setComposerStatus(uploaded.indexing_status === 'completed'
+        ? 'Document ready to use.'
+        : 'Document uploaded. Preparing it for use…')
     } catch (error) {
       setPendingFiles((current) => current.map((entry) =>
         entry.key === item.key

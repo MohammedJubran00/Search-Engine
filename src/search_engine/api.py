@@ -263,16 +263,34 @@ def document_question_scope(query: str, attachments: list[dict]) -> list[uuid.UU
     selected = [uuid.UUID(item['document_id']) for item in attachments]
     if len(selected) < 2:
         return selected
-    words = set(re.findall(r'[a-z0-9]+', query.casefold()))
+    words = set(_document_name_tokens(query))
+    chapter_reference = bool(re.search(
+        r'(?i)\b(?:chapter|lecture|pdf|document|file)\b|شابتر|فصل|محاضرة|ملف|مستند', query,
+    ))
+    requested_numbers = {word for word in words if word.isdigit()}
     matches = []
     for item in attachments:
         stem = item['filename'].rsplit('.', 1)[0].casefold()
-        parts = set(re.findall(r'[a-z0-9]+', stem))
+        tokens = _document_name_tokens(stem)
+        parts = set(tokens)
         numeric = {part for part in parts if part.isdigit()}
         descriptive = {part for part in parts if len(part) >= 4 and not part.isdigit()}
-        if numeric and numeric & words and descriptive & words:
+        leading_number = tokens[0] if tokens and tokens[0].isdigit() else None
+        if chapter_reference and requested_numbers and leading_number and leading_number not in requested_numbers:
+            continue
+        number_named = bool(numeric & words and descriptive & words)
+        chapter_named = bool(chapter_reference and leading_number and leading_number in words)
+        title_named = len(descriptive & words) >= 2 or any(
+            len(part) >= 7 for part in descriptive & words
+        )
+        if number_named or chapter_named or title_named:
             matches.append(uuid.UUID(item['document_id']))
     return matches if len(matches) == 1 else selected
+
+
+def _document_name_tokens(value: str) -> list[str]:
+    translated = value.translate(str.maketrans('٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'))
+    return re.findall(r'[^\W_]+', translated.casefold(), flags=re.UNICODE)
 
 
 def document_followup_scope(

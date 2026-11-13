@@ -93,3 +93,14 @@ def test_complete_context_retains_all_text_with_one_exact_count():
     assert all(chunk.text in result.text for chunk in chunks)
     assert result.truncated_source_count == 0
     assert result.token_count == len(result.text.split())
+
+
+def test_context_identifies_source_filename_and_escapes_unsafe_characters() -> None:
+    chunk = _chunk(1, 'Chapter seven content.')
+    from dataclasses import replace
+    chunk = replace(chunk, filename='7-Arch & "Design".pdf')
+    result = asyncio.run(RagContextBuilder().build(
+        [chunk], token_counter=_count, available_tokens=100,
+    ))
+    assert 'filename="7-Arch &amp; &quot;Design&quot;.pdf"' in result.text
+    assert result.sources[0].filename == '7-Arch & "Design".pdf'

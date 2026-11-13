@@ -10,6 +10,7 @@ from src.search_engine.rag.contracts import RetrievedChunk
 from src.search_engine.services.rag_answer_service import (
     RagAnswerCitationError,
     RagAnswerService,
+    document_retrieval_query,
 )
 from src.search_engine.services.retrieval_service import RetrievalDocumentAccessError
 from src.search_engine.api import document_question_scope, document_followup_scope
@@ -269,6 +270,11 @@ def test_named_document_scope_selects_unique_attached_file() -> None:
         {'document_id': str(third), 'filename': '7-Arch_and_Design (1).pdf'},
     ]
     assert document_question_scope('اشرحلي arch 9', attachments) == [first]
+    assert document_question_scope('تمام امسك شابتر 7 واشرحه كامل', attachments) == [third]
+    assert document_question_scope('اشرح الفصل ٧ بالكامل', attachments) == [third]
+    assert document_question_scope('Explain chapter 7', attachments) == [third]
+    assert document_question_scope('اشرح صفحة 7', attachments) == [first, second, third]
+    assert document_question_scope('قارن شابتر 7 وشابتر 9', attachments) == [first, second, third]
     assert document_question_scope('شو جوا المستندات؟', attachments) == [first, second, third]
 
 
@@ -355,6 +361,21 @@ def test_followup_keeps_named_document_scope_without_using_assistant_filenames()
     assert document_followup_scope('اشرحلي arch 6', attachments, history) == [second]
 
 
+def test_plain_detailed_followup_retains_chapter_seven_scope() -> None:
+    first, second, third = (uuid.uuid4() for _ in range(3))
+    attachments = [
+        {'document_id': str(first), 'filename': '9-Arch_and_Design.pdf'},
+        {'document_id': str(second), 'filename': '6-Arch_and_Design.pdf'},
+        {'document_id': str(third), 'filename': '7-Arch_and_Design (1).pdf'},
+    ]
+    history = [('user', 'تمام امسك شابتر 7 واشرحه كامل'),
+               ('assistant', 'لا يمكن شرح الفصل السابق كاملاً.')]
+    assert document_followup_scope('اشرح بالتفصيل', attachments, history) == [third]
+    retrieval_query = document_retrieval_query('اشرح بالتفصيل', history)
+    assert 'شابتر 7' in retrieval_query
+    assert 'لا يمكن' not in retrieval_query
+
+
 def test_all_chapters_detail_balances_evidence_across_selected_files() -> None:
     first, second, third = (uuid.uuid4() for _ in range(3))
 
@@ -420,6 +441,28 @@ def test_large_single_document_all_chapters_uses_more_diverse_evidence() -> None
     assert result.metadata['context_strategy'] == 'document_survey'
     assert retrieval.calls[0]['top_k'] == 36
     assert len(result.sources) == 2
+
+
+def test_chapter_seven_full_explanation_uses_document_survey_and_title() -> None:
+    document_id = uuid.uuid4()
+    filename = '7-Arch_and_Design (1).pdf'
+    class LargeLoader(FakeFullContextLoader):
+        async def load_full_document_chunks(self, **kwargs):
+            return [] if kwargs.get('require_complete', True) else [
+                _chunk(1, 'Design patterns introduction.', document_id=document_id, filename=filename)]
+    retrieval = FakeRetrieval([
+        _chunk(2, 'Structural patterns details.', document_id=document_id, filename=filename)])
+    generation = FakeGeneration(GenerationDraft(
+        AnswerStatus.ANSWERED, 'شرح الفصل [S1] [S2].', ('S1', 'S2'),
+    ))
+    result = _answer(retrieval, generation,
+                     question='تمام امسك شابتر 7 واشرحه كامل',
+                     document_ids=[document_id], full_context_loader=LargeLoader([]))
+    assert result.metadata['context_strategy'] == 'document_survey'
+    assert 'Response depth: detailed' in generation.calls[0][1]
+    assert 'filename="7-Arch_and_Design (1).pdf"' in generation.calls[0][1]
+    assert 'use the source filenames as section headings' in generation.calls[0][1]
+    assert 'useful part of the response' in generation.calls[0][0]
 
 
 def test_oversized_single_document_falls_back_to_semantic_retrieval() -> None:

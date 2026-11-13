@@ -1,6 +1,7 @@
 """Citation-aware, token-bounded context construction for RAG generation."""
 
 import re
+from html import escape
 from collections.abc import Awaitable, Callable, Sequence
 
 from src.search_engine.core.config import settings
@@ -87,6 +88,12 @@ class RagContextBuilder:
             wrapper_tokens = await token_counter(header + footer)
             text_budget = fair_budget - wrapper_tokens
             if text_budget < 1:
+                # Extremely small budgets still need room for source text;
+                # the mapped source reference retains the filename.
+                header = _source_header(label, chunk, include_filename=False)
+                wrapper_tokens = await token_counter(header + footer)
+                text_budget = fair_budget - wrapper_tokens
+            if text_budget < 1:
                 continue
 
             clean_text = chunk.text.strip()
@@ -133,11 +140,13 @@ def _source_reference(label: str, chunk: RetrievedChunk, included: str, maximum:
                            evidence_excerpt=_excerpt(included, maximum))
 
 
-def _source_header(label: str, chunk: RetrievedChunk) -> str:
+def _source_header(label: str, chunk: RetrievedChunk, *, include_filename: bool = True) -> str:
     page = str(chunk.page_number) if chunk.page_number is not None else "unknown"
+    safe_name = escape(' '.join(chunk.filename.split()), quote=True)
+    filename = f' filename="{safe_name}"' if include_filename else ''
     return (
         f'<source label="{label}" document_id="{chunk.document_id}" '
-        f'chunk_id="{chunk.chunk_id}" page="{page}">\n'
+        f'chunk_id="{chunk.chunk_id}"{filename} page="{page}">\n'
     )
 
 

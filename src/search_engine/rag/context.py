@@ -121,8 +121,14 @@ class RagContextBuilder:
 
         context = "\n\n".join(blocks)
         actual_tokens = await token_counter(context) if context else 0
-        if actual_tokens > available_tokens:
-            raise InvalidContextBudgetError("Constructed context exceeded its budget.")
+        # Token counts are not additive: separators and adjacent blocks may
+        # tokenize differently from each block counted alone. Keep the sources
+        # that fit instead of failing the whole answer after valid retrieval.
+        while actual_tokens > available_tokens and blocks:
+            blocks.pop()
+            sources.pop()
+            context = "\n\n".join(blocks)
+            actual_tokens = await token_counter(context) if context else 0
         return BuiltContext(
             text=context,
             sources=tuple(sources),

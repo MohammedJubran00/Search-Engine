@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from google.genai.errors import ServerError
 
 from src.search_engine.core.config import settings
 from src.search_engine.rag.answering import AnswerStatus, GenerationDraft
@@ -107,9 +108,25 @@ class GeminiRagGenerationProvider:
     async def stream_generate(self, *, system_prompt: str, user_prompt: str) -> AsyncIterator[str | GenerationDraft]:
         """Yield decoded provider answer fragments, then one validated draft.
 
-        Partial content is provisional. No retry/restart is attempted after
-        emission: that would duplicate text. Callers persist only the final draft.
+        Retry a transient provider 5xx only before emitting content. Callers
+        persist only the final validated draft.
         """
+        attempts = max(1, settings.rag_answer_max_retries)
+        for attempt in range(attempts):
+            emitted = False
+            try:
+                async for event in self._stream_once(
+                    system_prompt=system_prompt, user_prompt=user_prompt,
+                ):
+                    emitted = True
+                    yield event
+                return
+            except RagGenerationError as exc:
+                if emitted or not isinstance(exc.__cause__, ServerError) or attempt + 1 >= attempts:
+                    raise
+                await asyncio.sleep(0.5 * (attempt + 1))
+
+    async def _stream_once(self, *, system_prompt: str, user_prompt: str) -> AsyncIterator[str | GenerationDraft]:
         decoder = AnswerJsonDecoder()
         incremental_decode_failed = False
         aggregate = None

@@ -394,12 +394,13 @@ def test_all_chapters_detail_balances_evidence_across_selected_files() -> None:
     retrieval = PerFileRetrieval([])
     loader = IntroLoader([])
     generation = FakeGeneration(GenerationDraft(
-        AnswerStatus.ANSWERED, 'شرح الفصول [S1] [S5] [S9].', ('S1', 'S5', 'S9'),
+        AnswerStatus.ANSWERED, 'شرح الفصول [S1] [S2] [S3].', ('S1', 'S2', 'S3'),
     ))
     result = _answer(retrieval, generation, question='اشرحلي كل شابتر بالتفصيل',
                      document_ids=[first, second, third], full_context_loader=loader)
     assert result.metadata['context_strategy'] == 'document_survey'
     assert {source.document_id for source in result.sources} == {first, second, third}
+    assert {source.document_id for source in result.citations} == {first, second, third}
     assert len(retrieval.calls) == 3
     assert all(call['top_k'] == 12 for call in retrieval.calls)
     assert 'Do not replace explanation with a bare list' in generation.calls[0][1]

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from langchain_core.messages import AIMessageChunk
+from google.genai.errors import ServerError
 
 from src.search_engine.rag.answering import AnswerStatus, GenerationDraft, RagAnswerResult
 from src.search_engine.rag.generation import GeminiRagGenerationProvider, RagGenerationError, RagGenerationTimeoutError, InvalidGenerationResponseError
@@ -63,6 +64,44 @@ def test_fenced_valid_json_falls_back_to_completed_answer():
         events = [event async for event in provider.stream_generate(system_prompt='trusted', user_prompt='evidence')]
         assert events[0] == 'Document topic [S1].'
         assert events[1].answer == events[0]
+    asyncio.run(exercise())
+
+
+def test_transient_server_error_before_content_retries_once_without_duplicate_text():
+    async def exercise():
+        class Client:
+            calls = 0
+            async def astream(self, messages, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    raise ServerError(500, {'error': {'code': 500, 'message': 'temporary'}})
+                yield AIMessageChunk(content='{"status":"answered","answer":"Recovered [S1].","citations":["S1"]}')
+        client = Client()
+        events = [event async for event in GeminiRagGenerationProvider(client=client).stream_generate(
+            system_prompt='trusted', user_prompt='evidence',
+        )]
+        assert client.calls == 2
+        assert ''.join(event for event in events if isinstance(event, str)) == 'Recovered [S1].'
+        assert events[-1].answer == 'Recovered [S1].'
+    asyncio.run(exercise())
+
+
+def test_server_error_after_content_does_not_restart_stream():
+    async def exercise():
+        class Client:
+            calls = 0
+            async def astream(self, messages, **kwargs):
+                self.calls += 1
+                yield AIMessageChunk(content='{"status":"answered","answer":"partial')
+                raise ServerError(500, {'error': {'code': 500, 'message': 'temporary'}})
+        client = Client()
+        stream = GeminiRagGenerationProvider(client=client).stream_generate(
+            system_prompt='trusted', user_prompt='evidence',
+        )
+        assert await anext(stream) == 'partial'
+        with pytest.raises(RagGenerationError):
+            await anext(stream)
+        assert client.calls == 1
     asyncio.run(exercise())
 
 

@@ -326,7 +326,7 @@ class RagAnswerService:
             # one chapter, even when the user explicitly asks for all chapters.
             per_document_limit = (12 if len(document_ids) == 1
                                   else 4 if len(document_ids) <= 4 else 2)
-            chunks = []
+            per_document_chunks: list[list[RetrievedChunk]] = []
             for document_id in document_ids[:settings.rag_chat_max_document_selection]:
                 intro = (
                     await self._full_context_loader.load_full_document_chunks(
@@ -344,8 +344,12 @@ class RagAnswerService:
                     excluded_pages={item.page_number for item in intro if item.page_number is not None},
                     limit=per_document_limit - len(intro),
                 )
-                chunks.extend(replace(item, rank=len(chunks) + 1)
-                              for item in selected[:per_document_limit])
+                per_document_chunks.append(selected[:per_document_limit])
+            chunks = []
+            for index in range(per_document_limit):
+                for group in per_document_chunks:
+                    if index < len(group):
+                        chunks.append(replace(group[index], rank=len(chunks) + 1))
             return chunks, "document_survey"
 
         if document_ids and len(document_ids) > 1 and not followup and _is_document_overview(question):

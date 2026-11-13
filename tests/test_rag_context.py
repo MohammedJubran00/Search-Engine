@@ -104,3 +104,17 @@ def test_context_identifies_source_filename_and_escapes_unsafe_characters() -> N
     ))
     assert 'filename="7-Arch &amp; &quot;Design&quot;.pdf"' in result.text
     assert result.sources[0].filename == '7-Arch & "Design".pdf'
+
+
+def test_nonadditive_token_counts_trim_context_instead_of_failing() -> None:
+    async def count_with_separator_cost(text: str) -> int:
+        return len(text.split()) + 5 * text.count('\n\n')
+
+    result = asyncio.run(RagContextBuilder().build(
+        [_chunk(1, 'First source details.'), _chunk(2, 'Second source details.')],
+        token_counter=count_with_separator_cost,
+        available_tokens=14,
+    ))
+    assert result.sources
+    assert result.token_count <= 14
+    assert len(result.sources) == 1

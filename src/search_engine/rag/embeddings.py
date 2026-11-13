@@ -196,6 +196,10 @@ class GeminiEmbeddingProvider:
                     self._on_request()
                 return await operation()
             except Exception as exc:
+                if _is_quota_exhausted(exc):
+                    raise EmbeddingRateLimitError(
+                        "Gemini embedding quota is temporarily exhausted. Retry later."
+                    ) from exc
                 retryable = _is_retryable(exc)
                 if not retryable or attempt == self.max_retries:
                     if isinstance(exc, EmbeddingProviderError):
@@ -312,6 +316,16 @@ def _is_retryable(exc: BaseException) -> bool:
                 "service unavailable",
             )
         ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _is_quota_exhausted(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    while current is not None:
+        message = str(current).lower()
+        if "quota exceeded" in message or "resource_exhausted" in message:
             return True
         current = current.__cause__ or current.__context__
     return False

@@ -242,7 +242,10 @@ def test_embedding_failure_preserves_previous_valid_index(
 
     assert repository.chunks == [previous]
     assert repository.status == "failed"
-    assert repository.error_message == "Document indexing failed."
+    assert repository.error_message == (
+        "Gemini embedding quota is temporarily exhausted. Retry later."
+        if isinstance(failure, EmbeddingRateLimitError) else "Document indexing failed."
+    )
     assert session.rollbacks == 1
 
 

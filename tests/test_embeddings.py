@@ -218,6 +218,13 @@ def test_exhausted_rate_limit_and_permanent_api_failure_are_safe() -> None:
         asyncio.run(_provider(permanent).embed_query("text"))
 
 
+def test_quota_exhaustion_does_not_repeat_application_attempts() -> None:
+    client = FakeEmbeddingClient(failures=[RuntimeError("429 RESOURCE_EXHAUSTED: quota exceeded")])
+    with pytest.raises(EmbeddingRateLimitError, match="quota"):
+        asyncio.run(_provider(client).embed_documents(["text"]))
+    assert len(client.document_calls) == 1
+
+
 def test_empty_input_avoids_api_calls_and_blank_text_is_rejected() -> None:
     client = FakeEmbeddingClient()
     provider = _provider(client)

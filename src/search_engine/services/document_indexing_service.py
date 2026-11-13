@@ -121,8 +121,10 @@ class DocumentIndexingService:
             chunks = await self._prepare_chunks(claim)
             if progress:
                 await progress("chunked", 0, len(chunks))
-            vectors = await self._embeddings.embed_documents(
-                [chunk.text for chunk in chunks]
+                await progress("embedding", 0, len(chunks))
+            vectors = await asyncio.wait_for(
+                self._embeddings.embed_documents([chunk.text for chunk in chunks]),
+                timeout=settings.rag_indexing_embedding_timeout_seconds,
             )
             if progress:
                 await progress("embedded", len(vectors), len(chunks))
@@ -208,4 +210,8 @@ def _safe_failure_message(exc: Exception) -> str:
         return str(exc)
     if isinstance(exc, ConcurrentDocumentIndexingError):
         return "Document indexing is already in progress."
+    if isinstance(exc, EmbeddingRateLimitError):
+        return "Gemini embedding quota is temporarily exhausted. Retry later."
+    if isinstance(exc, TimeoutError):
+        return "Embedding took too long. Retry indexing later."
     return "Document indexing failed."

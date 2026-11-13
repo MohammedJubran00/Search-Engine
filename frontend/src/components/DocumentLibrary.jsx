@@ -82,6 +82,7 @@ export default function DocumentLibrary({ onDocumentsChanged }) {
   }
 
   function stageLabel(job, item) {
+    if (item.indexing_status === 'failed') return job?.error_message || 'Indexing failed. Retry later.'
     if (item.indexing_status === 'queued') return 'Indexing will start automatically…'
     if (!job) return item.indexing_status === 'processing' ? 'Preparing document…' : ''
     const stage = String(job.stage || '').replaceAll('_', ' ')

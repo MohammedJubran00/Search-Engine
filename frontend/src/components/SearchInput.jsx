@@ -120,6 +120,7 @@ export default function SearchInput({
         </div>
       ) : null}
       {composerStatus ? <p className="search-input__status" role="status">{composerStatus}</p> : null}
+      {attachedDocuments.some((item) => item.indexing_status === 'failed') ? <p className="search-input__status" role="alert">Document indexing failed. Open Document Library to see the reason and retry later, or remove the attachment.</p> : null}
       <label className="visually-hidden" htmlFor="search-query">Ask a question</label>
       <div className="search-input__bar">
         <div className="search-input__attach-wrap">

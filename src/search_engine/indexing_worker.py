@@ -53,14 +53,20 @@ async def process_one() -> bool:
             await jobs.finish(job_id)
             await session.commit()
         except Exception as exc:
-            logger.exception("Indexing job failed job_id=%s", job_id)
+            if isinstance(exc, DocumentIndexingQuotaError):
+                logger.warning("Indexing quota exhausted job_id=%s", job_id)
+            else:
+                logger.exception("Indexing job failed job_id=%s", job_id)
             await session.rollback()
             await UsageRepository(session).add(
                 request_id=job_id, user_id=user_id, conversation_id=None,
                 provider="gemini", operation="embedding", status="error",
                 model="models/gemini-embedding-001", request_count=provider_requests,
             )
-            await jobs.finish(job_id, error="Document indexing failed.")
+            await jobs.finish(job_id, error=(
+                "Gemini embedding quota is temporarily exhausted. Retry later."
+                if isinstance(exc, DocumentIndexingQuotaError) else "Document indexing failed."
+            ))
             await session.commit()
         return True
 

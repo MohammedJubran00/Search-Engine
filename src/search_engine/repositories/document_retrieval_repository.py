@@ -91,6 +91,7 @@ class DocumentRetrievalRepository:
         user_id: uuid.UUID,
         document_id: uuid.UUID,
         limit: int,
+        require_complete: bool = True,
     ) -> list[RetrievedChunk]:
         """Load one owned completed index in source order without embedding a query."""
         if limit < 1:
@@ -122,8 +123,9 @@ class DocumentRetrievalRepository:
                 .limit(limit + 1)
             )
         ).all()
-        if len(rows) > limit:
+        if len(rows) > limit and require_complete:
             return []
+        rows = rows[:limit]
         return [
             RetrievedChunk(
                 chunk_id=row.chunk_id,

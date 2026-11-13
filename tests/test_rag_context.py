@@ -28,12 +28,22 @@ def _chunk(rank: int, text: str, *, document_id: uuid.UUID | None = None) -> Ret
 
 
 def test_context_deduplicates_identical_content_and_keeps_stable_labels() -> None:
-    chunks = [_chunk(1, "Useful evidence."), _chunk(2, "  useful   EVIDENCE. ")]
+    document_id = uuid.uuid4()
+    chunks = [_chunk(1, "Useful evidence.", document_id=document_id),
+              _chunk(2, "  useful   EVIDENCE. ", document_id=document_id)]
     result = asyncio.run(
         RagContextBuilder().build(chunks, token_counter=_count, available_tokens=50)
     )
     assert [source.label for source in result.sources] == ["S1"]
     assert result.duplicate_chunks_skipped == 1
+
+
+def test_context_keeps_identical_text_from_different_documents() -> None:
+    result = asyncio.run(RagContextBuilder().build(
+        [_chunk(1, "Same topic."), _chunk(2, "Same topic.")],
+        token_counter=_count, available_tokens=50,
+    ))
+    assert [source.label for source in result.sources] == ["S1", "S2"]
 
 
 def test_context_preserves_multiple_sources_within_budget() -> None:

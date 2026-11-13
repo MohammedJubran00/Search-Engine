@@ -41,13 +41,13 @@ class RagContextBuilder:
             raise InvalidContextBudgetError("No token budget remains for evidence.")
 
         unique: list[RetrievedChunk] = []
-        seen: set[str] = set()
+        seen: set[tuple[object, str]] = set()
         duplicate_count = 0
         for chunk in chunks:
             clean = chunk.text.strip()
             if not clean:
                 continue
-            fingerprint = " ".join(clean.split()).casefold()
+            fingerprint = (chunk.document_id, " ".join(clean.split()).casefold())
             if fingerprint in seen:
                 duplicate_count += 1
                 continue

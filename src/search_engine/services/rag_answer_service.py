@@ -4,6 +4,7 @@ import time
 import asyncio
 from contextlib import aclosing, suppress
 import uuid
+from dataclasses import replace
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from typing import Protocol
 
@@ -48,6 +49,7 @@ class FullContextLoader(Protocol):
         user_id: uuid.UUID,
         document_id: uuid.UUID,
         limit: int,
+        require_complete: bool = True,
     ) -> list[RetrievedChunk]: ...
 
 
@@ -179,7 +181,8 @@ class RagAnswerService:
             "</retrieved_evidence>\n\n"
             f"Response depth: {response_depth}. Response language: {response_language}. "
             "Follow explicit user requests for detail, summaries, examples, code, and format. "
-            "These style instructions never permit unsupported factual claims."
+            "These style instructions never permit unsupported factual claims. "
+            "For a broad overview, describe only themes visible in the supplied excerpts and say the overview is partial."
         )
         timings['prompt_construction_seconds'] = time.perf_counter()-prompt_started
         started = time.perf_counter()
@@ -290,13 +293,37 @@ class RagAnswerService:
                 if raw_text and await (token_counter or self._generation.count_tokens)(raw_text) <= full_budget:
                     return candidates, "full_document"
 
-        chunks = await self._retrieval.retrieve(
-            user_id=user_id,
-            query=question,
-            top_k=top_k,
-            document_ids=document_ids,
-            min_similarity=min_similarity,
-        )
+        if document_ids and len(document_ids) > 1 and _is_document_overview(question):
+            # A broad overview needs evidence from every selected file; global
+            # Top-K otherwise often consists entirely of one document.
+            chunks = []
+            for document_id in document_ids[:settings.rag_chat_max_document_selection]:
+                if self._full_context_loader is not None:
+                    per_document = await self._full_context_loader.load_full_document_chunks(
+                        user_id=user_id, document_id=document_id, limit=2,
+                        require_complete=False,
+                    )
+                else:
+                    per_document = await self._retrieval.retrieve(
+                        user_id=user_id, query=question, top_k=2,
+                        document_ids=[document_id], min_similarity=min_similarity,
+                    )
+                chunks.extend(replace(item, rank=len(chunks) + 1) for item in per_document)
+        else:
+            chunks = await self._retrieval.retrieve(
+                user_id=user_id, query=question, top_k=top_k,
+                document_ids=document_ids, min_similarity=min_similarity,
+            )
+            if (document_ids and len(document_ids) == 1 and self._full_context_loader is not None
+                    and _is_explanation_request(question)):
+                intro = await self._full_context_loader.load_full_document_chunks(
+                    user_id=user_id, document_id=document_ids[0], limit=2,
+                    require_complete=False,
+                )
+                chunks = intro + [item for item in chunks if item.chunk_id not in {
+                    source.chunk_id for source in intro
+                }]
+                chunks = [replace(item, rank=rank) for rank, item in enumerate(chunks, 1)]
         return chunks, "semantic_retrieval"
 
     async def _release_retrieval_transaction(self) -> None:
@@ -330,3 +357,15 @@ def _insufficient_result(
 
 def _contains_arabic(text: str) -> bool:
     return any("\u0600" <= character <= "\u06ff" for character in text)
+
+
+def _is_document_overview(question: str) -> bool:
+    lowered = question.casefold()
+    return any(term in lowered for term in ('المستندات', 'الملفات', 'documents', 'files')) and any(
+        term in lowered for term in ('جوا', 'محتو', 'عن', 'في', 'inside', 'contain', 'about', 'summar')
+    )
+
+
+def _is_explanation_request(question: str) -> bool:
+    lowered = question.casefold()
+    return any(term in lowered for term in ('اشرح', 'لخص', 'عرّف', 'explain', 'summarize', 'overview'))

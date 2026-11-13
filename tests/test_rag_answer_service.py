@@ -12,6 +12,7 @@ from src.search_engine.services.rag_answer_service import (
     RagAnswerService,
 )
 from src.search_engine.services.retrieval_service import RetrievalDocumentAccessError
+from src.search_engine.api import document_question_scope
 
 
 class FakeRetrieval:
@@ -243,6 +244,63 @@ def test_multiple_documents_keep_semantic_retrieval_path() -> None:
     assert result.metadata["context_strategy"] == "semantic_retrieval"
     assert len(retrieval.calls) == 1
     assert loader.calls == []
+
+
+def test_overview_retrieves_evidence_from_each_selected_document() -> None:
+    first, second = uuid.uuid4(), uuid.uuid4()
+    class PerDocumentRetrieval(FakeRetrieval):
+        async def retrieve(self, **kwargs):
+            self.calls.append(kwargs)
+            document_id = kwargs['document_ids'][0]
+            return [_chunk(1, 'Document topic and details.', document_id=document_id)]
+    retrieval = PerDocumentRetrieval([])
+    result = _answer(retrieval, FakeGeneration(
+        GenerationDraft(AnswerStatus.ANSWERED, 'Two topics [S1] [S2].', ('S1', 'S2'))
+    ), question='شو جوا المستندات؟', document_ids=[first, second])
+    assert {source.document_id for source in result.sources} == {first, second}
+    assert len(retrieval.calls) == 2
+
+
+def test_named_document_scope_selects_unique_attached_file() -> None:
+    first, second, third = (uuid.uuid4() for _ in range(3))
+    attachments = [
+        {'document_id': str(first), 'filename': '9-Arch_and_Design.pdf'},
+        {'document_id': str(second), 'filename': '6-Arch_and_Design.pdf'},
+        {'document_id': str(third), 'filename': '7-Arch_and_Design (1).pdf'},
+    ]
+    assert document_question_scope('اشرحلي arch 9', attachments) == [first]
+    assert document_question_scope('شو جوا المستندات؟', attachments) == [first, second, third]
+
+
+def test_overview_uses_owned_intro_for_each_document_without_query_embedding() -> None:
+    first, second = uuid.uuid4(), uuid.uuid4()
+    class IntroLoader(FakeFullContextLoader):
+        async def load_full_document_chunks(self, **kwargs):
+            self.calls.append(kwargs)
+            return [_chunk(1, 'Introduction to this file.', document_id=kwargs['document_id'])]
+    retrieval = FakeRetrieval([])
+    loader = IntroLoader([])
+    result = _answer(retrieval, FakeGeneration(
+        GenerationDraft(AnswerStatus.ANSWERED, 'Both files have introductions [S1] [S2].', ('S1', 'S2'))
+    ), question='شو جوا المستندات؟', document_ids=[first, second], full_context_loader=loader)
+    assert {source.document_id for source in result.sources} == {first, second}
+    assert retrieval.calls == []
+    assert all(call['require_complete'] is False for call in loader.calls)
+
+
+def test_large_named_document_explanation_combines_intro_and_semantic_evidence() -> None:
+    document_id = uuid.uuid4()
+    intro = _chunk(1, 'Architecture course introduction.', document_id=document_id)
+    detail = _chunk(2, 'Specific design details.', document_id=document_id)
+    class LargeLoader(FakeFullContextLoader):
+        async def load_full_document_chunks(self, **kwargs):
+            self.calls.append(kwargs)
+            return [] if kwargs.get('require_complete', True) else [intro]
+    loader = LargeLoader([])
+    result = _answer(FakeRetrieval([detail]), FakeGeneration(
+        GenerationDraft(AnswerStatus.ANSWERED, 'Introduction and details [S1] [S2].', ('S1', 'S2'))
+    ), question='اشرحلي arch 9', document_ids=[document_id], full_context_loader=loader)
+    assert [source.chunk_id for source in result.sources] == [intro.chunk_id, detail.chunk_id]
 
 
 def test_oversized_single_document_falls_back_to_semantic_retrieval() -> None:

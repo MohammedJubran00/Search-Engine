@@ -20,6 +20,7 @@
 
 import asyncio
 import json
+import re
 import time
 import logging
 import uuid
@@ -257,6 +258,23 @@ async def resolve_chat_attachments(
     return attachments
 
 
+def document_question_scope(query: str, attachments: list[dict]) -> list[uuid.UUID]:
+    """Use an explicitly named selected file without changing saved attachments."""
+    selected = [uuid.UUID(item['document_id']) for item in attachments]
+    if len(selected) < 2:
+        return selected
+    words = set(re.findall(r'[a-z0-9]+', query.casefold()))
+    matches = []
+    for item in attachments:
+        stem = item['filename'].rsplit('.', 1)[0].casefold()
+        parts = set(re.findall(r'[a-z0-9]+', stem))
+        numeric = {part for part in parts if part.isdigit()}
+        descriptive = {part for part in parts if len(part) >= 4 and not part.isdigit()}
+        if numeric and numeric & words and descriptive & words:
+            matches.append(uuid.UUID(item['document_id']))
+    return matches if len(matches) == 1 else selected
+
+
 async def answer_document_turn(
     *,
     db: AsyncSession,
@@ -403,7 +421,7 @@ async def chat(
                 user_id=user.id,
                 conversation_id=conversation.id,
                 query=query,
-                document_ids=effective_document_ids,
+                document_ids=document_question_scope(query, attachments),
                 response_depth=request.response_depth,
                 response_language=request.response_language,
             )
@@ -632,7 +650,7 @@ async def chat_stream(
                 answer_stream = RagAnswerService(db).stream_answer(
                     user_id=user_id,
                     question=query,
-                    document_ids=effective_document_ids,
+                    document_ids=document_question_scope(query, attachments),
                     response_depth=request.response_depth,
                     response_language=request.response_language,
                 )
@@ -686,9 +704,10 @@ async def chat_stream(
                 await db.rollback()
                 usage.mark_error(quota="quota" in str(exc).lower())
                 logger.warning(
-                    "Streaming document chat failed for conversation_id=%s error_type=%s",
+                    "Streaming document chat failed for conversation_id=%s error_type=%s cause_type=%s",
                     conversation_id,
                     type(exc).__name__,
+                    type(exc.__cause__).__name__ if exc.__cause__ else 'none',
                 )
                 response = document_error_response(exc)
                 yield sse_event({"error": json.loads(response.body)["error"], 'discard_partial': True})

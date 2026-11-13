@@ -111,6 +111,7 @@ class GeminiRagGenerationProvider:
         emission: that would duplicate text. Callers persist only the final draft.
         """
         decoder = AnswerJsonDecoder()
+        incremental_decode_failed = False
         aggregate = None
         started = time.perf_counter()
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
@@ -122,13 +123,29 @@ class GeminiRagGenerationProvider:
                 async for chunk in iterator:
                     self.timings.setdefault('first_provider_chunk_seconds', time.perf_counter()-started)
                     aggregate = chunk if aggregate is None else aggregate + chunk
-                    delta = decoder.feed(_message_text(chunk.content))
+                    delta = ''
+                    if not incremental_decode_failed:
+                        try:
+                            delta = decoder.feed(_message_text(chunk.content))
+                        except ValueError:
+                            # A fenced or otherwise nonincremental response may
+                            # still be a valid complete structured answer.
+                            incremental_decode_failed = True
                     if delta:
                         self.timings.setdefault('first_model_content_seconds', time.perf_counter()-started)
                         yield delta
             if aggregate is None:
                 raise InvalidGenerationResponseError('Gemini returned an empty stream.')
             draft = _parse_response(aggregate)
+            if incremental_decode_failed and not draft.answer.startswith(decoder.answer):
+                raise InvalidGenerationResponseError('Streamed answer did not match final JSON.')
+            if incremental_decode_failed:
+                remainder = draft.answer[len(decoder.answer):]
+                if remainder:
+                    yield remainder
+                self.timings['model_total_seconds'] = time.perf_counter()-started
+                yield draft
+                return
             if decoder.answer.strip() != draft.answer:
                 raise InvalidGenerationResponseError('Streamed answer did not match final JSON.')
             self.timings['model_total_seconds'] = time.perf_counter()-started

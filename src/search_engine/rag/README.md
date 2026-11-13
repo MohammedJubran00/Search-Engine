@@ -314,6 +314,13 @@ indexed documents owned by the authenticated user. General mode rejects a
 document scope so context cannot accidentally cross modes. Selection is
 bounded by `RAG_CHAT_MAX_DOCUMENT_SELECTION`.
 
+An explicit filename number plus title token in a question scopes evidence to
+that one selected, already authorized file. Broad overview questions use short
+opening excerpts from each selected file; this is a partial overview, not a
+complete reading of large PDFs. A large single-file explanation combines
+opening excerpts with semantic matches. Duplicate content is removed within
+one file while source attribution across different files is preserved.
+
 Routing is deterministic at the FastAPI boundary. General mode continues to
 use the unchanged LangGraph/Gemini/Tavily path. Document mode calls
 `RagAnswerService` directly with the JWT-derived user ID and never falls back

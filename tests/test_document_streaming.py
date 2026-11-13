@@ -53,6 +53,19 @@ def test_stream_yields_real_provider_content_before_json_is_complete():
     asyncio.run(exercise())
 
 
+def test_fenced_valid_json_falls_back_to_completed_answer():
+    async def exercise():
+        class Client:
+            async def astream(self, messages, **kwargs):
+                yield AIMessageChunk(content='```json\n{"status":"answered",')
+                yield AIMessageChunk(content='"answer":"Document topic [S1].","citations":["S1"]}\n```')
+        provider = GeminiRagGenerationProvider(client=Client())
+        events = [event async for event in provider.stream_generate(system_prompt='trusted', user_prompt='evidence')]
+        assert events[0] == 'Document topic [S1].'
+        assert events[1].answer == events[0]
+    asyncio.run(exercise())
+
+
 def test_service_cancellation_closes_active_provider_without_a_final_result():
     async def exercise():
         closed = asyncio.Event()

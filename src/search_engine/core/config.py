@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     rag_embedding_document_task_type: str = "RETRIEVAL_DOCUMENT"
     rag_embedding_query_task_type: str = "RETRIEVAL_QUERY"
     rag_embedding_normalize: bool = True
+    rag_query_cache_max_entries: int = 256
+    rag_query_cache_ttl_seconds: int = 900
     rag_embedding_batch_size: int = 100
     rag_embedding_max_concurrency: int = 2
     rag_embedding_max_retries: int = 3

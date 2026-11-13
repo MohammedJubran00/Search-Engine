@@ -12,8 +12,31 @@ from src.search_engine.rag.embeddings import (
     GeminiEmbeddingProvider,
     InvalidEmbeddingError,
 )
+from src.search_engine.rag import embeddings as embedding_module
 
 DIMENSIONS = 1_536
+
+
+def test_query_cache_reuses_valid_vector_and_expires(monkeypatch):
+    async def exercise():
+        client = FakeEmbeddingClient()
+        provider = _provider(client)
+        provider._cache_enabled = True
+        embedding_module._query_cache.clear()
+        clock = [100.0]
+        monkeypatch.setattr(embedding_module.time, 'monotonic', lambda: clock[0])
+        monkeypatch.setattr(embedding_module.settings, 'rag_query_cache_ttl_seconds', 10)
+        first = await provider.embed_query('unique cache test question')
+        second = await provider.embed_query('unique cache test question')
+        assert first == second and first is not second
+        assert len(client.query_calls) == 1
+        second[0] = 999.0
+        assert (await provider.embed_query('unique cache test question'))[0] == first[0]
+        clock[0] = 111.0
+        await provider.embed_query('unique cache test question')
+        assert len(client.query_calls) == 2
+        embedding_module._query_cache.clear()
+    asyncio.run(exercise())
 
 
 class FakeEmbeddingClient:

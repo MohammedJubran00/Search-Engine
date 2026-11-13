@@ -7,6 +7,10 @@ specific so document and future query embeddings cannot be confused.
 
 import asyncio
 import math
+import time
+import hashlib
+from collections import OrderedDict
+from threading import Lock
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol, TypeVar
 
@@ -17,6 +21,8 @@ from src.search_engine.core.config import settings
 GEMINI_MAX_BATCH_SIZE = 100
 _UNIT_NORM_TOLERANCE = 1e-6
 _EmbeddingResult = TypeVar("_EmbeddingResult")
+_query_cache: OrderedDict[tuple[str, int, str, bool, str], tuple[float, tuple[float, ...]]] = OrderedDict()
+_query_cache_lock = Lock()
 
 
 class EmbeddingProviderError(RuntimeError):
@@ -87,7 +93,9 @@ class GeminiEmbeddingProvider:
                 output_dimensionality=dimensions,
             )
         )
+        self._cache_enabled = client is None
         self.dimensions = dimensions
+        self.model = model
         self.document_task_type = document_task_type
         self.query_task_type = query_task_type
         self.normalize = normalize
@@ -143,13 +151,29 @@ class GeminiEmbeddingProvider:
     async def embed_query(self, text: str) -> list[float]:
         """Embed one future retrieval query with its distinct task type."""
         _validate_embedding_text(text)
-        raw = await self._with_retry(
-            lambda: self._client.aembed_query(
-                text,
-                task_type=self.query_task_type,
-                output_dimensionality=self.dimensions,
-            )
-        )
+        if not self._cache_enabled or settings.rag_query_cache_max_entries <= 0 or settings.rag_query_cache_ttl_seconds <= 0:
+            return await self._embed_query_uncached(text)
+        key = (self.model, self.dimensions, self.query_task_type, self.normalize,
+               hashlib.sha256(text.encode('utf-8')).hexdigest())
+        with _query_cache_lock:
+            cached = _query_cache.get(key)
+            if cached is not None:
+                if cached[0] > time.monotonic():
+                    _query_cache.move_to_end(key)
+                    return list(cached[1])
+                del _query_cache[key]
+        vector = await self._embed_query_uncached(text)
+        with _query_cache_lock:
+            _query_cache[key] = (time.monotonic() + settings.rag_query_cache_ttl_seconds, tuple(vector))
+            _query_cache.move_to_end(key)
+            while len(_query_cache) > settings.rag_query_cache_max_entries:
+                _query_cache.popitem(last=False)
+        return list(vector)
+
+    async def _embed_query_uncached(self, text: str) -> list[float]:
+        raw = await self._with_retry(lambda: self._client.aembed_query(
+            text, task_type=self.query_task_type, output_dimensionality=self.dimensions,
+        ))
         return self._prepare_vector(raw)
 
     def _prepare_vector(self, vector: Sequence[float]) -> list[float]:

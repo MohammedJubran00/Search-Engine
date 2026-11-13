@@ -12,7 +12,7 @@ from src.search_engine.services.rag_answer_service import (
     RagAnswerService,
 )
 from src.search_engine.services.retrieval_service import RetrievalDocumentAccessError
-from src.search_engine.api import document_question_scope
+from src.search_engine.api import document_question_scope, document_followup_scope
 
 
 class FakeRetrieval:
@@ -301,6 +301,57 @@ def test_large_named_document_explanation_combines_intro_and_semantic_evidence()
         GenerationDraft(AnswerStatus.ANSWERED, 'Introduction and details [S1] [S2].', ('S1', 'S2'))
     ), question='اشرحلي arch 9', document_ids=[document_id], full_context_loader=loader)
     assert [source.chunk_id for source in result.sources] == [intro.chunk_id, detail.chunk_id]
+
+
+def test_arabic_detail_followup_uses_prior_topic_but_only_current_evidence() -> None:
+    retrieval = FakeRetrieval([_chunk(1, 'Singleton uses one shared instance.')])
+    generation = FakeGeneration(GenerationDraft(
+        AnswerStatus.ANSWERED, 'يوجد كائن واحد [S1].', ('S1',),
+    ))
+    history = [
+        ('user', 'اشرحلي ما داخل الملف'),
+        ('assistant', 'الملف يشرح Singleton وخصائصه [S9].'),
+    ]
+    result = _answer(
+        retrieval, generation, question='بالتفصيل', conversation_history=history,
+    )
+    assert result.status is AnswerStatus.ANSWERED
+    assert 'Singleton' in retrieval.calls[0]['query']
+    assert 'بالتفصيل' in retrieval.calls[0]['query']
+    assert '<conversation_history>' in generation.calls[0][1]
+    assert 'Response depth: detailed' in generation.calls[0][1]
+    assert [source.label for source in result.citations] == ['S1']
+
+
+def test_explicit_new_document_question_does_not_inherit_old_retrieval_topic() -> None:
+    retrieval = FakeRetrieval([_chunk(1, 'The new topic.')])
+    generation = FakeGeneration(GenerationDraft(
+        AnswerStatus.ANSWERED, 'New topic [S1].', ('S1',),
+    ))
+    _answer(retrieval, generation, question='What is the budget for 2027?',
+            conversation_history=[('user', 'Explain Singleton'), ('assistant', 'Singleton [S1].')])
+    assert retrieval.calls[0]['query'] == 'What is the budget for 2027?'
+
+
+def test_new_explanation_subject_does_not_inherit_previous_subject() -> None:
+    retrieval = FakeRetrieval([_chunk(1, 'Architecture content.')])
+    generation = FakeGeneration(GenerationDraft(
+        AnswerStatus.ANSWERED, 'Architecture [S1].', ('S1',),
+    ))
+    _answer(retrieval, generation, question='اشرحلي ما داخل الملف',
+            conversation_history=[('user', 'ما الميزانية؟'), ('assistant', 'لا أعرف الميزانية.')])
+    assert retrieval.calls[0]['query'] == 'اشرحلي ما داخل الملف'
+
+
+def test_followup_keeps_named_document_scope_without_using_assistant_filenames() -> None:
+    first, second = uuid.uuid4(), uuid.uuid4()
+    attachments = [
+        {'document_id': str(first), 'filename': '9-Arch_and_Design.pdf'},
+        {'document_id': str(second), 'filename': '6-Arch_and_Design.pdf'},
+    ]
+    history = [('user', 'اشرحلي arch 9'), ('assistant', 'هذا محتوى arch 6 أيضاً.')]
+    assert document_followup_scope('بالتفصيل', attachments, history) == [first]
+    assert document_followup_scope('اشرحلي arch 6', attachments, history) == [second]
 
 
 def test_oversized_single_document_falls_back_to_semantic_retrieval() -> None:

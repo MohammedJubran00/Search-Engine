@@ -54,7 +54,7 @@ from src.search_engine.services.document_service import (
 from src.search_engine.rag.answering import RagAnswerResult, SourceReference
 from src.search_engine.rag.generation import RagGenerationError
 from src.search_engine.research.presentation import derive_answer_presentation
-from src.search_engine.services.rag_answer_service import RagAnswerService
+from src.search_engine.services.rag_answer_service import RagAnswerService, document_retrieval_query
 from src.search_engine.services.observability_service import UsageRecord
 from src.search_engine.repositories.usage_repository import UsageRepository
 from src.search_engine.services.retrieval_service import (
@@ -275,6 +275,16 @@ def document_question_scope(query: str, attachments: list[dict]) -> list[uuid.UU
     return matches if len(matches) == 1 else selected
 
 
+def document_followup_scope(
+    query: str, attachments: list[dict], history: list[tuple[str, str]],
+) -> list[uuid.UUID]:
+    current = document_question_scope(query, attachments)
+    if len(current) == 1 or document_retrieval_query(query, history) == query:
+        return current
+    previous_user = next((text for role, text in reversed(history) if role == "user"), "")
+    return document_question_scope(previous_user, attachments) if previous_user else current
+
+
 async def answer_document_turn(
     *,
     db: AsyncSession,
@@ -285,6 +295,7 @@ async def answer_document_turn(
     document_ids: list[uuid.UUID],
     response_depth: str = "auto",
     response_language: str = "auto",
+    conversation_history: list[tuple[str, str]] | None = None,
 ) -> RagAnswerResult:
     result = await RagAnswerService(db).answer(
         user_id=user_id,
@@ -292,6 +303,7 @@ async def answer_document_turn(
         document_ids=document_ids or None,
         response_depth=response_depth,
         response_language=response_language,
+        conversation_history=conversation_history or (),
     )
     await persist_document_answer(service, user_id, conversation_id, result)
     return result
@@ -377,11 +389,19 @@ async def chat(
         except ConversationNotFoundError:
             return error_response(404, _CONVERSATION_NOT_FOUND)
     general_history: list[tuple[str, str]] = []
+    document_history: list[tuple[str, str]] = []
     if request.mode == "general" and request.conversation_id is not None:
         try:
             general_history = await service.get_bounded_general_history(
                 user_id=user.id,
                 conversation_id=request.conversation_id,
+            )
+        except ConversationNotFoundError:
+            return error_response(404, _CONVERSATION_NOT_FOUND)
+    if request.mode == "documents" and request.conversation_id is not None:
+        try:
+            document_history = await service.get_bounded_document_history(
+                user_id=user.id, conversation_id=request.conversation_id,
             )
         except ConversationNotFoundError:
             return error_response(404, _CONVERSATION_NOT_FOUND)
@@ -421,9 +441,10 @@ async def chat(
                 user_id=user.id,
                 conversation_id=conversation.id,
                 query=query,
-                document_ids=document_question_scope(query, attachments),
+                document_ids=document_followup_scope(query, attachments, document_history),
                 response_depth=request.response_depth,
                 response_language=request.response_language,
+                conversation_history=document_history,
             )
         except (RetrievalError, RagGenerationError) as exc:
             usage.mark_error(quota="quota" in str(exc).lower())
@@ -602,11 +623,19 @@ async def chat_stream(
         except ConversationNotFoundError:
             return error_response(404, _CONVERSATION_NOT_FOUND)
     general_history: list[tuple[str, str]] = []
+    document_history: list[tuple[str, str]] = []
     if request.mode == "general" and request.conversation_id is not None:
         try:
             general_history = await service.get_bounded_general_history(
                 user_id=user.id,
                 conversation_id=request.conversation_id,
+            )
+        except ConversationNotFoundError:
+            return error_response(404, _CONVERSATION_NOT_FOUND)
+    if request.mode == "documents" and request.conversation_id is not None:
+        try:
+            document_history = await service.get_bounded_document_history(
+                user_id=user.id, conversation_id=request.conversation_id,
             )
         except ConversationNotFoundError:
             return error_response(404, _CONVERSATION_NOT_FOUND)
@@ -650,9 +679,10 @@ async def chat_stream(
                 answer_stream = RagAnswerService(db).stream_answer(
                     user_id=user_id,
                     question=query,
-                    document_ids=document_question_scope(query, attachments),
+                    document_ids=document_followup_scope(query, attachments, document_history),
                     response_depth=request.response_depth,
                     response_language=request.response_language,
+                    conversation_history=document_history,
                 )
                 try:
                     async for event in answer_stream:

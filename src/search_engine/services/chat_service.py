@@ -255,6 +255,34 @@ class ChatService:
         max_characters: int = settings.general_chat_history_max_characters,
     ) -> list[tuple[str, str]]:
         """Return recent persisted General Chat turns without another model call."""
+        return await self._get_bounded_history(
+            user_id=user_id, conversation_id=conversation_id, mode="general",
+            max_messages=max_messages, max_characters=max_characters,
+        )
+
+    async def get_bounded_document_history(
+        self,
+        *,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        max_messages: int = 6,
+        max_characters: int = 3000,
+    ) -> list[tuple[str, str]]:
+        """Return only this user's recent document turns before the new turn is saved."""
+        return await self._get_bounded_history(
+            user_id=user_id, conversation_id=conversation_id, mode="documents",
+            max_messages=max_messages, max_characters=max_characters,
+        )
+
+    async def _get_bounded_history(
+        self,
+        *,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID,
+        mode: str,
+        max_messages: int,
+        max_characters: int,
+    ) -> list[tuple[str, str]]:
         if max_messages < 1 or max_characters < 1:
             raise ValueError("History limits must be positive.")
         conversation = await self._conversations.get_by_id_for_user(
@@ -267,7 +295,7 @@ class ChatService:
         decoded = [
             item
             for item in (_decode_message(row) for row in rows)
-            if item.mode == "general" and item.role in {"user", "assistant"}
+            if item.mode == mode and item.role in {"user", "assistant"}
         ]
         selected: list[tuple[str, str]] = []
         remaining = max_characters

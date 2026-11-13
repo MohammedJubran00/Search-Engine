@@ -401,6 +401,28 @@ def test_document_chat_uses_rag_once_and_persists_attribution(
     assert latest["messages"][1]["status"] == "answered"
     assert latest["messages"][1]["citations"][0]["label"] == "S1"
 
+    followup = client.post(
+        "/chat",
+        json={"query": "بالتفصيل", "mode": "documents", "conversation_id": body["conversation_id"]},
+        headers=headers,
+    )
+    assert followup.status_code == 200
+    passed_history = mock_answer.await_args.kwargs["conversation_history"]
+    assert passed_history[0] == ("user", "What is the goal?")
+    assert passed_history[1][0] == "assistant"
+    assert all(text != "بالتفصيل" for _, text in passed_history)
+
+    stream_followup = client.post(
+        "/chat/stream",
+        json={"query": "كمل", "mode": "documents", "conversation_id": body["conversation_id"]},
+        headers=headers,
+    )
+    assert stream_followup.status_code == 200
+    assert '"done": true' in stream_followup.text
+    stream_history = mock_answer.await_args.kwargs["conversation_history"]
+    assert [role for role, _ in stream_history] == ["user", "assistant", "user", "assistant"]
+    assert stream_history[-2][1] == "بالتفصيل"
+
 
 @patch("src.search_engine.api.RagAnswerService.answer", new_callable=AsyncMock)
 def test_document_stream_uses_one_completed_answer_event(

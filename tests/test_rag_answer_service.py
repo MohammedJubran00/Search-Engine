@@ -314,6 +314,7 @@ def test_arabic_detail_followup_uses_prior_topic_but_only_current_evidence() -> 
     ]
     result = _answer(
         retrieval, generation, question='بالتفصيل', conversation_history=history,
+        response_depth='concise',
     )
     assert result.status is AnswerStatus.ANSWERED
     assert 'Singleton' in retrieval.calls[0]['query']
@@ -352,6 +353,73 @@ def test_followup_keeps_named_document_scope_without_using_assistant_filenames()
     history = [('user', 'اشرحلي arch 9'), ('assistant', 'هذا محتوى arch 6 أيضاً.')]
     assert document_followup_scope('بالتفصيل', attachments, history) == [first]
     assert document_followup_scope('اشرحلي arch 6', attachments, history) == [second]
+
+
+def test_all_chapters_detail_balances_evidence_across_selected_files() -> None:
+    first, second, third = (uuid.uuid4() for _ in range(3))
+
+    class PerFileRetrieval(FakeRetrieval):
+        async def retrieve(self, **kwargs):
+            self.calls.append(kwargs)
+            document_id = kwargs['document_ids'][0]
+            return [_chunk(index, f'Chapter {index} explanation.', document_id=document_id)
+                    for index in range(1, 4)]
+
+    class IntroLoader(FakeFullContextLoader):
+        async def load_full_document_chunks(self, **kwargs):
+            self.calls.append(kwargs)
+            return [_chunk(1, 'Chapter introduction.', document_id=kwargs['document_id'])]
+
+    retrieval = PerFileRetrieval([])
+    loader = IntroLoader([])
+    generation = FakeGeneration(GenerationDraft(
+        AnswerStatus.ANSWERED, 'شرح الفصول [S1] [S5] [S9].', ('S1', 'S5', 'S9'),
+    ))
+    result = _answer(retrieval, generation, question='اشرحلي كل شابتر بالتفصيل',
+                     document_ids=[first, second, third], full_context_loader=loader)
+    assert result.metadata['context_strategy'] == 'document_survey'
+    assert {source.document_id for source in result.sources} == {first, second, third}
+    assert len(retrieval.calls) == 3
+    assert all(call['top_k'] == 12 for call in retrieval.calls)
+    assert 'Do not replace explanation with a bare list' in generation.calls[0][1]
+
+
+def test_explain_them_in_detail_uses_previous_topics_for_balanced_search() -> None:
+    first, second = uuid.uuid4(), uuid.uuid4()
+    class PerFileRetrieval(FakeRetrieval):
+        async def retrieve(self, **kwargs):
+            self.calls.append(kwargs)
+            return [_chunk(1, 'Pattern details.', document_id=kwargs['document_ids'][0])]
+    retrieval = PerFileRetrieval([])
+    generation = FakeGeneration(GenerationDraft(
+        AnswerStatus.ANSWERED, 'شرح النمطين [S1] [S2].', ('S1', 'S2'),
+    ))
+    result = _answer(
+        retrieval, generation, question='ايوه اشرحهم بالتفصيل',
+        document_ids=[first, second],
+        conversation_history=[('user', 'ما هي الأنماط؟'),
+                              ('assistant', 'هناك Strategy و Observer [S1].')],
+    )
+    assert result.metadata['context_strategy'] == 'document_survey'
+    assert all('Strategy' in call['query'] for call in retrieval.calls)
+    assert {source.document_id for source in result.citations} == {first, second}
+
+
+def test_large_single_document_all_chapters_uses_more_diverse_evidence() -> None:
+    document_id = uuid.uuid4()
+    class LargeLoader(FakeFullContextLoader):
+        async def load_full_document_chunks(self, **kwargs):
+            self.calls.append(kwargs)
+            return [] if kwargs.get('require_complete', True) else [
+                _chunk(1, 'Chapter introduction.', document_id=document_id)]
+    retrieval = FakeRetrieval([_chunk(2, 'Later chapter details.', document_id=document_id)])
+    result = _answer(retrieval, FakeGeneration(GenerationDraft(
+        AnswerStatus.ANSWERED, 'شرح [S1] [S2].', ('S1', 'S2'),
+    )), question='اشرحلي كل شابتر بالتفصيل', document_ids=[document_id],
+        full_context_loader=LargeLoader([]))
+    assert result.metadata['context_strategy'] == 'document_survey'
+    assert retrieval.calls[0]['top_k'] == 36
+    assert len(result.sources) == 2
 
 
 def test_oversized_single_document_falls_back_to_semantic_retrieval() -> None:

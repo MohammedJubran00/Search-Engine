@@ -82,6 +82,7 @@ class RagAnswerService:
         self._full_context_builder = RagContextBuilder(
             max_sources=settings.rag_full_context_max_chunks,
         )
+        self._survey_context_builder = RagContextBuilder(max_sources=20)
         self._full_context_loader = full_context_loader
         if self._full_context_loader is None and session is not None:
             self._full_context_loader = DocumentRetrievalRepository(session)
@@ -101,6 +102,8 @@ class RagAnswerService:
     ) -> RagAnswerResult:
         history = _bounded_conversation_history(conversation_history)
         retrieval_query = document_retrieval_query(question, history)
+        survey = _is_broad_detailed_request(question, history, document_ids)
+        effective_depth = "detailed" if _requests_detail(question) else response_depth
         history_text = "\n".join(f"{role}: {content}" for role, content in history)
         timings = {'token_count_seconds': 0.0, 'token_count_operations': 0}
         token_cache: dict[str, int] = {}
@@ -133,6 +136,7 @@ class RagAnswerService:
             user_id=user_id,
             question=retrieval_query,
             followup=retrieval_query != question,
+            survey=survey,
             top_k=max(top_k, settings.rag_answer_max_sources) if retrieval_query != question else top_k,
             document_ids=document_ids,
             min_similarity=min_similarity,
@@ -152,8 +156,8 @@ class RagAnswerService:
             )
 
         context_builder = (
-            self._full_context_builder
-            if strategy == "full_document"
+            self._full_context_builder if strategy == "full_document"
+            else self._survey_context_builder if strategy == "document_survey"
             else self._context_builder
         )
         context_budget = (
@@ -190,8 +194,11 @@ class RagAnswerService:
             "<retrieved_evidence>\n"
             f"{context.text}\n"
             "</retrieved_evidence>\n\n"
-            f"Response depth: {'detailed' if response_depth == 'auto' and _requests_detail(question) else response_depth}. Response language: {response_language}. "
+            f"Response depth: {effective_depth}. Response language: {response_language}. "
             "Follow explicit user requests for detail, summaries, examples, code, and format. "
+            "When detail is requested, explain each supported topic in prose: its purpose, how it works, and a concrete example only if the evidence provides one. "
+            "Use separate headings for distinct chapters or documents. Do not replace explanation with a bare list of names. "
+            "If the evidence covers only some requested chapters or concepts, clearly identify that coverage as partial; do not claim to have explained all of them. "
             "These style instructions never permit unsupported factual claims. "
             "For a broad overview, describe only themes visible in the supplied excerpts and say the overview is partial."
         )
@@ -282,6 +289,7 @@ class RagAnswerService:
         user_id: uuid.UUID,
         question: str,
         followup: bool,
+        survey: bool,
         top_k: int,
         document_ids: Sequence[uuid.UUID] | None,
         min_similarity: float | None,
@@ -304,6 +312,34 @@ class RagAnswerService:
                 full_budget = min(available_tokens, settings.rag_full_context_max_tokens)
                 if raw_text and await (token_counter or self._generation.count_tokens)(raw_text) <= full_budget:
                     return candidates, "full_document"
+
+        if survey and document_ids:
+            # Broad explanations need balanced evidence from each selected file.
+            # A single global nearest-neighbor search can fill every slot from
+            # one chapter, even when the user explicitly asks for all chapters.
+            per_document_limit = (12 if len(document_ids) == 1
+                                  else 4 if len(document_ids) <= 4 else 2)
+            chunks = []
+            for document_id in document_ids[:settings.rag_chat_max_document_selection]:
+                intro = (
+                    await self._full_context_loader.load_full_document_chunks(
+                        user_id=user_id, document_id=document_id, limit=1,
+                        require_complete=False,
+                    )
+                    if self._full_context_loader is not None else []
+                )
+                relevant = await self._retrieval.retrieve(
+                    user_id=user_id, query=question, top_k=per_document_limit * 3,
+                    document_ids=[document_id], min_similarity=min_similarity,
+                )
+                selected = intro + _spread_across_pages(
+                    relevant, excluded_ids={item.chunk_id for item in intro},
+                    excluded_pages={item.page_number for item in intro if item.page_number is not None},
+                    limit=per_document_limit - len(intro),
+                )
+                chunks.extend(replace(item, rank=len(chunks) + 1)
+                              for item in selected[:per_document_limit])
+            return chunks, "document_survey"
 
         if document_ids and len(document_ids) > 1 and not followup and _is_document_overview(question):
             # A broad overview needs evidence from every selected file; global
@@ -371,6 +407,29 @@ def _contains_arabic(text: str) -> bool:
     return any("\u0600" <= character <= "\u06ff" for character in text)
 
 
+def _spread_across_pages(
+    chunks: Sequence[RetrievedChunk], *, excluded_ids: set[uuid.UUID],
+    excluded_pages: set[int], limit: int,
+) -> list[RetrievedChunk]:
+    """Prefer distinct source pages while retaining similarity order as a fallback."""
+    selected: list[RetrievedChunk] = []
+    seen_ids = set(excluded_ids)
+    seen_pages = set(excluded_pages)
+    for distinct_pages_only in (True, False):
+        for chunk in chunks:
+            if len(selected) >= limit:
+                return selected
+            if chunk.chunk_id in seen_ids:
+                continue
+            if distinct_pages_only and chunk.page_number is not None and chunk.page_number in seen_pages:
+                continue
+            selected.append(chunk)
+            seen_ids.add(chunk.chunk_id)
+            if chunk.page_number is not None:
+                seen_pages.add(chunk.page_number)
+    return selected
+
+
 def _is_document_overview(question: str) -> bool:
     lowered = question.casefold()
     if lowered.strip(' ؟?.!') in {'اشرحلي', 'اشرح', 'explain', 'summarize', 'لخص'}:
@@ -392,6 +451,8 @@ def _requests_detail(question: str) -> bool:
 
 def _is_followup(question: str) -> bool:
     lowered = question.strip().casefold().strip(' ؟?.!')
+    if _requests_detail(lowered) and any(term in lowered for term in ('اشرحهم', 'اشرحها', 'اشرحهن', 'explain them')):
+        return True
     if lowered in {'اشرحلي', 'اشرح', 'وضح', 'بالتفصيل', 'فصل', 'كمل', 'اكمل',
                    'تابع', 'continue', 'go on', 'elaborate', 'expand', 'in detail'}:
         return True
@@ -402,6 +463,26 @@ def _is_followup(question: str) -> bool:
         marker in lowered for marker in ('النقطة', 'اللي ذكرت', 'التي ذكرت', 'السابق',
                                          'هذه', 'هذا', 'mentioned', 'previous', 'that point')
     )
+
+
+def _is_broad_detailed_request(
+    question: str,
+    history: Sequence[tuple[str, str]],
+    document_ids: Sequence[uuid.UUID] | None,
+) -> bool:
+    if not document_ids or not _requests_detail(question):
+        return False
+    lowered = question.casefold()
+    if any(term in lowered for term in ('كل شابتر', 'كل فصل', 'كل ملف', 'كل مستند',
+                                        'جميع الفصول', 'جميع الملفات', 'all chapters',
+                                        'each chapter', 'all documents', 'each document')):
+        return True
+    if any(term in lowered for term in ('اشرحهم', 'اشرحها', 'اشرحهن', 'explain them')):
+        return bool(history)
+    if _is_followup(question):
+        previous_user = next((text for role, text in reversed(history) if role == 'user'), '')
+        return _is_document_overview(previous_user) or 'كل شابتر' in previous_user
+    return False
 
 
 def _bounded_conversation_history(history: Sequence[tuple[str, str]]) -> list[tuple[str, str]]:
